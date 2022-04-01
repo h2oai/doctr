@@ -74,7 +74,7 @@ def extract_rcrops(
         _boxes[:, :, 0] *= width
         _boxes[:, :, 1] *= height
 
-    src_pts = _boxes[:, 1:].astype(np.float32)
+    src_pts = _boxes[:, :3].astype(np.float32)
     # Preserve size
     d1 = np.linalg.norm(src_pts[:, 0] - src_pts[:, 1], axis=-1)
     d2 = np.linalg.norm(src_pts[:, 1] - src_pts[:, 2], axis=-1)
@@ -96,13 +96,12 @@ def extract_rcrops(
 
 
 def get_max_width_length_ratio(contour: np.ndarray) -> float:
-    """
-    Get the maximum shape ratio of a contour.
+    """Get the maximum shape ratio of a contour.
+
     Args:
         contour: the contour from cv2.findContour
 
     Returns: the maximum shape ratio
-
     """
     _, (w, h), _ = cv2.minAreaRect(contour)
     return max(w / h, h / w)
@@ -112,13 +111,14 @@ def estimate_orientation(img: np.ndarray, n_ct: int = 50, ratio_threshold_for_li
     """Estimate the angle of the general document orientation based on the
      lines of the document and the assumption that they should be horizontal.
 
-        Args:
-            img: the img to analyze
-            n_ct: the number of contours used for the orientation estimation
-            ratio_threshold_for_lines: this is the ratio w/h used to discriminates lines
-        Returns:
-            the angle of the general document orientation
-        """
+    Args:
+        img: the img to analyze
+        n_ct: the number of contours used for the orientation estimation
+        ratio_threshold_for_lines: this is the ratio w/h used to discriminates lines
+
+    Returns:
+        the angle of the general document orientation
+    """
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray_img = cv2.medianBlur(gray_img, 5)
     thresh = cv2.threshold(gray_img, thresh=0, maxval=255, type=cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
