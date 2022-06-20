@@ -48,7 +48,16 @@ class _AbstractDataset:
     ) -> Tuple[Any, Any]:
 
         # Read image
-        img, target = self._read_sample(index)
+        while True:
+            img, target = self._read_sample(index)
+            if (img.shape[-1] != 0) and (img.shape[-2] != 0):
+                break
+            else:
+                print("hit out of index")
+                index += 1
+                index = index % len(self.data)
+
+
         # Pre-transforms (format conversion at run-time etc.)
         if self._pre_transforms is not None:
             img, target = self._pre_transforms(img, target)
@@ -58,9 +67,17 @@ class _AbstractDataset:
             img = self.img_transforms(img)  # type: ignore[call-arg]
 
         if self.sample_transforms is not None:
-            img, target = self.sample_transforms(img, target)
-
-        return img, target
+            img, target["boxes"]= self.sample_transforms(img, target["boxes"])
+        if type(target) == dict:
+            if "boxes" in target:
+                return img, target["boxes"]
+            elif "labels" in target:
+                if type(target["labels"]) == list:
+                    return img, target["labels"][0]
+                else:
+                    return img, target["labels"]
+        else:
+            return img, target
 
     def extra_repr(self) -> str:
         return ""
@@ -93,26 +110,30 @@ class _VisionDataset(_AbstractDataset):
         overwrite: bool = False,
         cache_dir: Optional[str] = None,
         cache_subdir: Optional[str] = None,
+        predownload_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
+        if predownload_path:
+            super().__init__(predownload_path, **kwargs)
+        else:
+            cache_dir = os.path.join(os.path.expanduser('~'), '.cache', 'doctr') if cache_dir is None else cache_dir
+            cache_subdir = 'datasets' if cache_subdir is None else cache_subdir
 
-        cache_dir = os.path.join(os.path.expanduser('~'), '.cache', 'doctr') if cache_dir is None else cache_dir
-        cache_subdir = 'datasets' if cache_subdir is None else cache_subdir
+            file_name = file_name if isinstance(file_name, str) else os.path.basename(url)
+            # Download the file if not present
+            archive_path: Union[str, Path] = os.path.join(cache_dir, cache_subdir, file_name)
 
-        file_name = file_name if isinstance(file_name, str) else os.path.basename(url)
-        # Download the file if not present
-        archive_path: Union[str, Path] = os.path.join(cache_dir, cache_subdir, file_name)
+            if not os.path.exists(archive_path) and not download:
+                raise ValueError("the dataset needs to be downloaded first with download=True")
+            
 
-        if not os.path.exists(archive_path) and not download:
-            raise ValueError("the dataset needs to be downloaded first with download=True")
+            archive_path = download_from_url(url, file_name, file_hash, cache_dir=cache_dir, cache_subdir=cache_subdir)
 
-        archive_path = download_from_url(url, file_name, file_hash, cache_dir=cache_dir, cache_subdir=cache_subdir)
+            # Extract the archive
+            if extract_archive:
+                archive_path = Path(archive_path)
+                dataset_path = archive_path.parent.joinpath(archive_path.stem)
+                if not dataset_path.is_dir() or overwrite:
+                    shutil.unpack_archive(archive_path, dataset_path)
 
-        # Extract the archive
-        if extract_archive:
-            archive_path = Path(archive_path)
-            dataset_path = archive_path.parent.joinpath(archive_path.stem)
-            if not dataset_path.is_dir() or overwrite:
-                shutil.unpack_archive(archive_path, dataset_path)
-
-        super().__init__(dataset_path if extract_archive else archive_path, **kwargs)
+            super().__init__(dataset_path if extract_archive else archive_path, **kwargs)

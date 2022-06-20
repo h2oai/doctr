@@ -73,8 +73,12 @@ def encode_string(
         A list encoding the input_string"""
 
     try:
+        if type(input_string) == list:
+            input_string = input_string[0]
         return list(map(vocab.index, input_string))  # type: ignore[arg-type]
     except ValueError:
+        # print(input_string)
+        return list(map(vocab.index, ""))  # type: ignore[arg-type]
         raise ValueError("some characters cannot be found in 'vocab'")
 
 

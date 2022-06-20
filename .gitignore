@@ -138,3 +138,9 @@ wandb/
 *.pt
 *.pb
 *.index
+
+#datasets 
+*.jpg
+*.zip
+*.tar
+*.gz

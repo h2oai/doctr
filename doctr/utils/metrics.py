@@ -9,12 +9,13 @@ import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from unidecode import unidecode
+from thefuzz import fuzz
 
 __all__ = ['TextMatch', 'box_iou', 'box_ioa', 'mask_iou', 'polygon_iou',
            'nms', 'LocalizationConfusion', 'OCRMetric', 'DetectionMetric']
 
 
-def string_match(word1: str, word2: str) -> Tuple[bool, bool, bool, bool]:
+def string_match(word1: str, word2: str) -> Tuple[bool, bool, bool, bool, float]:
     """Performs string comparison with multiple levels of tolerance
 
     Args:
@@ -23,7 +24,7 @@ def string_match(word1: str, word2: str) -> Tuple[bool, bool, bool, bool]:
 
     Returns:
         a tuple with booleans specifying respectively whether the raw strings, their lower-case counterparts, their
-            unidecode counterparts and their lower-case unidecode counterparts match
+            unidecode counterparts and their lower-case unidecode counterparts match and fuzz ratio
     """
     raw_match = (word1 == word2)
     caseless_match = (word1.lower() == word2.lower())
@@ -31,8 +32,8 @@ def string_match(word1: str, word2: str) -> Tuple[bool, bool, bool, bool]:
 
     # Warning: the order is important here otherwise the pair ("EUR", "€") cannot be matched
     unicase_match = (unidecode(word1).lower() == unidecode(word2).lower())
-
-    return raw_match, caseless_match, unidecode_match, unicase_match
+    fuzz_ratio = fuzz.ratio(word1, word2)
+    return raw_match, caseless_match, unidecode_match, unicase_match, fuzz_ratio
 
 
 class TextMatch:
@@ -75,7 +76,7 @@ class TextMatch:
         """Update the state of the metric with new predictions
 
         Args:
-            gt: list of groung-truth character sequences
+            gt: list of ground-truth character sequences
             pred: list of predicted character sequences
         """
 
@@ -83,12 +84,12 @@ class TextMatch:
             raise AssertionError("prediction size does not match with ground-truth labels size")
 
         for gt_word, pred_word in zip(gt, pred):
-            _raw, _caseless, _unidecode, _unicase = string_match(gt_word, pred_word)
+            _raw, _caseless, _unidecode, _unicase, _fuzz_ratio = string_match(gt_word, pred_word)
             self.raw += int(_raw)
             self.caseless += int(_caseless)
             self.unidecode += int(_unidecode)
             self.unicase += int(_unicase)
-
+            self.levenshtein_distance += float(_fuzz_ratio/100)
         self.total += len(gt)
 
     def summary(self) -> Dict[str, float]:
@@ -106,6 +107,7 @@ class TextMatch:
             caseless=self.caseless / self.total,
             unidecode=self.unidecode / self.total,
             unicase=self.unicase / self.total,
+            levenshtein_distance=self.levenshtein_distance / self.total,
         )
 
     def reset(self) -> None:
@@ -114,6 +116,7 @@ class TextMatch:
         self.unidecode = 0
         self.unicase = 0
         self.total = 0
+        self.levenshtein_distance = 0
 
 
 def box_iou(boxes_1: np.ndarray, boxes_2: np.ndarray) -> np.ndarray:

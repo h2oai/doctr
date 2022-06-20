@@ -105,6 +105,7 @@ class _WordGenerator(AbstractDataset):
     def __init__(
         self,
         vocab: str,
+        word_list: str,
         min_chars: int,
         max_chars: int,
         num_samples: int,
@@ -114,24 +115,49 @@ class _WordGenerator(AbstractDataset):
         sample_transforms: Optional[Callable[[Any, Any], Tuple[Any, Any]]] = None,
     ) -> None:
         self.vocab = vocab
+        if word_list is not None:
+            self.word_list = open(word_list).read().split("\n")
+            self.word_list = [word for word in self.word_list if (len(word)<= 32)]
+            word_list = []
+            for word in self.word_list:
+                skip = False
+                for char in word:
+                    if char not in self.vocab:
+                        skip = True
+                if skip:
+                    continue
+                else:
+                    word_list.append(word)
+            self.word_list = word_list
+        else:
+            self.word_list = None
         self.wordlen_range = (min_chars, max_chars)
         self._num_samples = num_samples
-        self.font_family = font_family if isinstance(font_family, list) else [font_family]  # type: ignore[list-item]
+        font_family = font_family if isinstance(font_family, list) else [font_family]  # type: ignore[list-item]
+        self.font_family = []
         # Validate fonts
         if isinstance(font_family, list):
-            for font in self.font_family:
+            for font in font_family:
                 try:
-                    _ = get_font(font, 10)
+                    _ = get_font(font, 8)
+                    self.font_family.append(font)
                 except OSError:
-                    raise ValueError(f"unable to locate font: {font}")
+                    print("couldnt load", font)
+                    pass
+                #     raise ValueError(f"unable to locate font: {font}")
         self.img_transforms = img_transforms
         self.sample_transforms = sample_transforms
 
         self._data: List[Image.Image] = []
+
         if cache_samples:
             _words = [self._generate_string(*self.wordlen_range) for _ in range(num_samples)]
             self._data = [
-                (synthesize_text_img(text, font_family=random.choice(self.font_family)), text)
+                (synthesize_text_img(text,
+                font_size = random.randint(12, 12),
+                background_color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)),
+                text_color=(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)),
+                font_family=random.choice(self.font_family)), text)
                 for text in _words
             ]
 
@@ -143,12 +169,30 @@ class _WordGenerator(AbstractDataset):
         return self._num_samples
 
     def _read_sample(self, index: int) -> Tuple[Any, str]:
+        making_img = True
         # Samples are already cached
         if len(self._data) > 0:
             pil_img, target = self._data[index]
+            img = tensor_from_pil(pil_img)
         else:
-            target = self._generate_string(*self.wordlen_range)
-            pil_img = synthesize_text_img(target, font_family=random.choice(self.font_family))
-        img = tensor_from_pil(pil_img)
+            while making_img:
+                num = random.random()
+                if (num > 0.9) or (self.word_list == None):
+                    target = self._generate_string(*self.wordlen_range)
+                else:
+                    target = random.choice(self.word_list)
+                try:
+                    font_size = random.randint(8, 128)
+                    font_family = random.choice(self.font_family)
+                    pil_img = synthesize_text_img(target,
+                        font_size = font_size,
+                        background_color = (random.randint(0, 55), random.randint(0, 55), random.randint(0, 55)),
+                        text_color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255)),
+                        font_family=font_family)
+                    img = tensor_from_pil(pil_img)
+                    making_img = False
+                except:
+                    print("could not render text for the word", target, font_size, font_family)
+                    making_img = True
 
         return img, target

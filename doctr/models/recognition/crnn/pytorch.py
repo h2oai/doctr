@@ -6,6 +6,7 @@
 from copy import deepcopy
 from itertools import groupby
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from doctr.models.classification.effnet.pytorch import efficientnet_b0, efficientnet_b3
 
 import torch
 from torch import nn
@@ -13,12 +14,13 @@ from torch.nn import functional as F
 
 from doctr.datasets import VOCABS, decode_sequence
 
-from ...classification import mobilenet_v3_large_r, mobilenet_v3_small_r, vgg16_bn_r
+from ...classification import mobilenet_v3_large_r, mobilenet_v3_small_r, vgg16_bn_r, convnext_tiny, resnet18
 from ...utils.pytorch import load_pretrained_params
 from ..core import RecognitionModel, RecognitionPostProcessor
+from doctr.datasets import encode_sequences
 
 __all__ = ['CRNN', 'crnn_vgg16_bn', 'crnn_mobilenet_v3_small',
-           'crnn_mobilenet_v3_large']
+           'crnn_mobilenet_v3_large', 'crnn_convnext_tiny', "crnn_resnet18", "crnn_efficientnet_b0", "crnn_efficientnet_b3", "CTCPostProcessor"]
 
 default_cfgs: Dict[str, Dict[str, Any]] = {
     'crnn_vgg16_bn': {
@@ -42,8 +44,31 @@ default_cfgs: Dict[str, Dict[str, Any]] = {
         'vocab': VOCABS['french'],
         'url': "https://github.com/mindee/doctr/releases/download/v0.3.1/crnn_mobilenet_v3_large_pt-f5259ec2.pt",
     },
+        'crnn_convnext_tiny': {
+        'mean': (0.694, 0.695, 0.693),
+        'std': (0.299, 0.296, 0.301),
+        'input_shape': (3, 32, 128),
+        'vocab': VOCABS['french'],
+    },
+        'crnn_resnet18': {
+        'mean': (0.694, 0.695, 0.693),
+        'std': (0.299, 0.296, 0.301),
+        'input_shape': (3, 32, 128),
+        'vocab': VOCABS['french'],
+    },
+        'crnn_efficientnet_b0': {
+        'mean': (0.694, 0.695, 0.693),
+        'std': (0.299, 0.296, 0.301),
+        'input_shape': (3, 32, 128),
+        'vocab': VOCABS['french'],
+    },
+        'crnn_efficientnet_b3': {
+        'mean': (0.694, 0.695, 0.693),
+        'std': (0.299, 0.296, 0.301),
+        'input_shape': (3, 32, 128),
+        'vocab': VOCABS['french'],
+    },
 }
-
 
 class CTCPostProcessor(RecognitionPostProcessor):
     """
@@ -117,7 +142,7 @@ class CRNN(RecognitionModel, nn.Module):
         vocab: str,
         rnn_units: int = 128,
         input_shape: Tuple[int, int, int] = (3, 32, 128),
-        cfg: Optional[Dict[str, Any]] = None,
+        cfg: Optional[Dict[str, Any]] = None, **kwargs,
     ) -> None:
         super().__init__()
         self.vocab = vocab
@@ -129,6 +154,7 @@ class CRNN(RecognitionModel, nn.Module):
         self.feat_extractor.eval()
         with torch.no_grad():
             out_shape = self.feat_extractor(torch.zeros((1, *input_shape))).shape
+            print(out_shape)
         lstm_in = out_shape[1] * out_shape[2]
         # Switch back to original mode
         self.feat_extractor.train()
@@ -154,46 +180,11 @@ class CRNN(RecognitionModel, nn.Module):
                 m.weight.data.fill_(1.0)
                 m.bias.data.zero_()
 
-    def compute_loss(
-        self,
-        model_output: torch.Tensor,
-        target: List[str],
-    ) -> torch.Tensor:
-        """Compute CTC loss for the model.
-
-        Args:
-            gt: the encoded tensor with gt labels
-            model_output: predicted logits of the model
-            seq_len: lengths of each gt word inside the batch
-
-        Returns:
-            The loss of the model on the batch
-        """
-        gt, seq_len = self.build_target(target)
-        batch_len = model_output.shape[0]
-        input_length = model_output.shape[1] * torch.ones(size=(batch_len,), dtype=torch.int32)
-        # N x T x C -> T x N x C
-        logits = model_output.permute(1, 0, 2)
-        probs = F.log_softmax(logits, dim=-1)
-        ctc_loss = F.ctc_loss(
-            probs,
-            torch.from_numpy(gt),
-            input_length,
-            torch.tensor(seq_len, dtype=torch.int),
-            len(self.vocab),
-            zero_infinity=True,
-        )
-
-        return ctc_loss
 
     def forward(
         self,
         x: torch.Tensor,
-        target: Optional[List[str]] = None,
-        return_model_output: bool = False,
-        return_preds: bool = False,
-    ) -> Dict[str, Any]:
-
+    ) -> torch.Tensor:
         features = self.feat_extractor(x)
         # B x C x H x W --> B x C*H x W --> B x W x C*H
         c, h, w = features.shape[1], features.shape[2], features.shape[3]
@@ -201,19 +192,7 @@ class CRNN(RecognitionModel, nn.Module):
         features_seq = torch.transpose(features_seq, 1, 2)
         logits, _ = self.decoder(features_seq)
         logits = self.linear(logits)
-
-        out: Dict[str, Any] = {}
-        if return_model_output:
-            out["out_map"] = logits
-
-        if target is None or return_preds:
-            # Post-process boxes
-            out["preds"] = self.postprocessor(logits)
-
-        if target is not None:
-            out['loss'] = self.compute_loss(logits, target)
-
-        return out
+        return logits
 
 
 def _crnn(
@@ -224,12 +203,9 @@ def _crnn(
     ignore_keys: Optional[List[str]] = None,
     **kwargs: Any,
 ) -> CRNN:
-
     pretrained_backbone = pretrained_backbone and not pretrained
-
     # Feature extractor
-    feat_extractor = backbone_fn(pretrained=pretrained_backbone).features  # type: ignore[call-arg]
-
+    feat_extractor = backbone_fn(pretrained=pretrained_backbone, **kwargs).features  # type: ignore[call-arg]
     kwargs['vocab'] = kwargs.get('vocab', default_cfgs[arch]['vocab'])
     kwargs['input_shape'] = kwargs.get('input_shape', default_cfgs[arch]['input_shape'])
 
@@ -285,7 +261,6 @@ def crnn_mobilenet_v3_small(pretrained: bool = False, **kwargs: Any) -> CRNN:
     Returns:
         text recognition architecture
     """
-
     return _crnn(
         'crnn_mobilenet_v3_small',
         pretrained,
@@ -316,6 +291,101 @@ def crnn_mobilenet_v3_large(pretrained: bool = False, **kwargs: Any) -> CRNN:
         'crnn_mobilenet_v3_large',
         pretrained,
         mobilenet_v3_large_r,
+        ignore_keys=['linear.weight', 'linear.bias'],
+        **kwargs,
+    )
+
+def crnn_convnext_tiny(pretrained: bool = False, **kwargs: Any) -> CRNN:
+    """CRNN with convnext tiny backbone
+
+    >>> import torch
+    >>> from doctr.models import crnn_convnext_tiny
+    >>> model = crnn_convnext_tiny(pretrained=True)
+    >>> input_tensor = torch.rand(1, 3, 32, 128)
+    >>> out = model(input_tensor)
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on our text recognition dataset
+
+    Returns:
+        text recognition architecture
+    """
+
+    return _crnn(
+        'crnn_convnext_tiny',
+        pretrained,
+        convnext_tiny,
+        ignore_keys=['linear.weight', 'linear.bias'],
+        **kwargs,
+    )
+
+def crnn_resnet18(pretrained: bool = False, **kwargs: Any) -> CRNN:
+    """CRNN with resnet18
+
+    >>> import torch
+    >>> from doctr.models import crnn_convnext_tiny
+    >>> model = crnn_convnext_tiny(pretrained=True)
+    >>> input_tensor = torch.rand(1, 3, 32, 128)
+    >>> out = model(input_tensor)
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on our text recognition dataset
+
+    Returns:
+        text recognition architecture
+    """
+
+    return _crnn(
+        'crnn_resnet18',
+        pretrained,
+        resnet18,
+        ignore_keys=['linear.weight', 'linear.bias'],
+        **kwargs,
+    )
+
+def crnn_efficientnet_b0(pretrained: bool = False, **kwargs: Any) -> CRNN:
+    """CRNN with efficientnet_b0
+
+    >>> import torch
+    >>> from doctr.models import crnn_convnext_tiny
+    >>> model = crnn_convnext_tiny(pretrained=True)
+    >>> input_tensor = torch.rand(1, 3, 32, 128)
+    >>> out = model(input_tensor)
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on our text recognition dataset
+
+    Returns:
+        text recognition architecture
+    """
+
+    return _crnn(
+        'crnn_efficientnet_b0',
+        pretrained,
+        efficientnet_b0,
+        ignore_keys=['linear.weight', 'linear.bias'],
+        **kwargs,
+    )
+
+def crnn_efficientnet_b3(pretrained: bool = False, **kwargs: Any) -> CRNN:
+    """CRNN with efficientnet_b3
+
+    >>> import torch
+    >>> from doctr.models import crnn_convnext_tiny
+    >>> model = crnn_convnext_tiny(pretrained=True)
+    >>> input_tensor = torch.rand(1, 3, 32, 128)
+    >>> out = model(input_tensor)
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on our text recognition dataset
+
+    Returns:
+        text recognition architecture
+    """
+    return _crnn(
+        'crnn_efficientnet_b3',
+        pretrained,
+        efficientnet_b3,
         ignore_keys=['linear.weight', 'linear.bias'],
         **kwargs,
     )

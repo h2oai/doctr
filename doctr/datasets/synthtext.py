@@ -13,6 +13,12 @@ from tqdm import tqdm
 
 from .datasets import VisionDataset
 from .utils import convert_target_to_relative, crop_bboxes_from_image
+import h5py
+
+from doctr.io import tensor_from_numpy
+from copy import deepcopy
+import json
+import cv2
 
 __all__ = ['SynthText']
 
@@ -46,7 +52,7 @@ class SynthText(VisionDataset):
         recognition_task: bool = False,
         **kwargs: Any,
     ) -> None:
-
+        
         super().__init__(
             self.URL,
             None,
@@ -61,13 +67,9 @@ class SynthText(VisionDataset):
 
         # Load mat data
         tmp_root = os.path.join(self.root, 'SynthText') if self.SHA256 else self.root
-        pickle_file_name = 'SynthText_Reco_train.pkl' if self.train else 'SynthText_Reco_test.pkl'
-        pickle_file_name = 'Poly_' + pickle_file_name if use_polygons else pickle_file_name
-        pickle_path = os.path.join(tmp_root, pickle_file_name)
-
-        if recognition_task and os.path.exists(pickle_path):
-            self._pickle_read(pickle_path)
-            return
+        jpg_dir_name = 'SynthText_Reco_train' if self.train else 'SynthText_Reco_test'
+        jpg_dir_name = 'Poly_' + jpg_dir_name if use_polygons else jpg_dir_name
+        jpg_path = os.path.join(tmp_root, jpg_dir_name)
 
         mat_data = sio.loadmat(os.path.join(tmp_root, 'gt.mat'))
         train_samples = int(len(mat_data['imnames'][0]) * 0.9)
@@ -76,7 +78,9 @@ class SynthText(VisionDataset):
         boxes = mat_data['wordBB'][0][set_slice]
         labels = mat_data['txt'][0][set_slice]
         del mat_data
-
+        
+        index = 0
+        labels_dict = {}
         for img_path, word_boxes, txt in tqdm(iterable=zip(paths, boxes, labels),
                                               desc='Unpacking SynthText', total=len(paths)):
             # File existence check
@@ -93,26 +97,25 @@ class SynthText(VisionDataset):
                 word_boxes = np.concatenate((word_boxes.min(axis=1), word_boxes.max(axis=1)), axis=1)
 
             if recognition_task:
+                os.makedirs(jpg_path + "/images", exist_ok = True)
+                os.makedirs(jpg_path + "/labels", exist_ok = True)
+
                 crops = crop_bboxes_from_image(img_path=os.path.join(tmp_root, img_path[0]), geoms=word_boxes)
-                with open(pickle_path, 'ab+') as f:
-                    for crop, label in zip(crops, labels):
-                        pickle.dump((crop, label), f)
+                for crop, label in zip(crops, labels):
+                    if (crop.shape[0] == 0) or (crop.shape[1] == 0):
+                        # print(f"skipping crop because it has an invalid shape {crop.shape}")
+                        continue
+                    cv2.imwrite(f"{jpg_path}/{str(index)}.jpg", crop)
+                    labels_dict[f"{str(index)}.jpg"] = label
+                    index += 1
             else:
                 self.data.append((img_path[0], dict(boxes=np.asarray(word_boxes, dtype=np_dtype), labels=labels)))
-
-        if recognition_task:
-            self._pickle_read(pickle_path)
-
+        
+        with open(jpg_path + "/labels/labels.json", 'w') as json_file:
+            json.dump(labels_dict, json_file)
         self.root = tmp_root
 
     def extra_repr(self) -> str:
         return f"train={self.train}"
 
-    def _pickle_read(self, path: str) -> None:
-        with open(path, 'rb') as f:
-            while True:
-                try:
-                    crop, label = pickle.load(f)
-                    self.data.append((crop, dict(labels=[label])))
-                except EOFError:
-                    break
+

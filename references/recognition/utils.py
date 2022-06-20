@@ -7,18 +7,21 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-
+import os
 
 def plot_samples(images, targets):
     # Unnormalize image
-    num_samples = min(len(images), 12)
+    num_samples = min(len(images), 64)
     num_cols = min(len(images), 4)
     num_rows = int(math.ceil(num_samples / num_cols))
     _, axes = plt.subplots(num_rows, num_cols, figsize=(20, 5))
+    os.makedirs("sample_dir", exist_ok = True)
+    images = images.expand(images.shape[0], 3, images.shape[2], images.shape[3])
     for idx in range(num_samples):
         img = (255 * images[idx].numpy()).round().clip(0, 255).astype(np.uint8)
         if img.shape[0] == 3 and img.shape[2] != 3:
             img = img.transpose(1, 2, 0)
+        plt.imsave(f"sample_dir/{idx}.jpg", img)
 
         row_idx = idx // num_cols
         col_idx = idx % num_cols
@@ -30,7 +33,6 @@ def plot_samples(images, targets):
     # Disable axis
     for ax in axes.ravel():
         ax.axis('off')
-
     plt.show()
 
 
@@ -71,3 +73,4 @@ def plot_recorder(lr_recorder, loss_recorder, beta: float = 0.95, **kwargs) -> N
     plt.ylim(vals[min_idx] - 0.1 * delta, max_val + 0.2 * delta)
     plt.grid(True, linestyle='--', axis='x')
     plt.show(**kwargs)
+    plt.imsave("lr_plot.jpg")

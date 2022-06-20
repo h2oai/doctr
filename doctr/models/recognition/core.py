@@ -9,9 +9,36 @@ import numpy as np
 
 from doctr.datasets import encode_sequences
 from doctr.utils.repr import NestedObject
+import torch
+from torch.nn import functional as F
 
 __all__ = ['RecognitionPostProcessor', 'RecognitionModel']
 
+def build_targets(gts, vocab, target_size = 32):
+    encoded = encode_sequences(
+        sequences=gts,
+        vocab=vocab,
+        target_size=target_size,
+        eos=len(vocab))
+    seq_len = [len(word) for word in gts]
+    encoded = torch.tensor(encoded, device = "cuda")
+    seq_len = torch.tensor(seq_len, device = "cuda", dtype = torch.int32)
+    return encoded, seq_len
+
+def calc_loss(logits, targets, seq_len, vocab):
+    batch_len = logits.shape[0]
+    input_length = logits.shape[1] * torch.ones(size=(batch_len,), dtype=torch.int32)
+    logits = logits.permute(1, 0, 2)
+    probs = F.log_softmax(logits, dim=-1)
+    loss = F.ctc_loss(
+        probs,
+        targets,
+        input_length,
+        seq_len,
+        len(vocab),
+        zero_infinity=True,
+    )
+    return loss
 
 class RecognitionModel(NestedObject):
     """Implements abstract RecognitionModel class"""
