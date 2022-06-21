@@ -132,7 +132,8 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
         optimizer.zero_grad()
         if amp:
             with torch.cuda.amp.autocast():
-                train_loss = model(images)['loss']
+                logits = model(images)
+                train_loss = calc_loss(logits, targets, seq_len, model.module.vocab)
             scaler.scale(train_loss).backward()
             # Gradient clipping
             scaler.unscale_(optimizer)
@@ -200,7 +201,11 @@ def evaluate(model, val_loader, batch_transforms, val_metric, amp=False, eval_er
         images = batch_transforms(images)
         if amp:
             with torch.cuda.amp.autocast():
-                out = model(images, return_preds=True)
+                out = {}
+                logits = model(images)
+                out["loss"] = calc_loss(logits, targets, seq_len, model.module.vocab)
+                postprocessor = CTCPostProcessor(vocab=model.module.vocab)
+                out["preds"] = postprocessor(logits)
         else:
             out = {}
             logits = model(images)
@@ -235,7 +240,7 @@ def main(args):
         login_to_hub()
 
     if not isinstance(args.workers, int):
-        args.workers = min(16, mp.cpu_count())
+        args.workers = min(32, mp.cpu_count())
 
     torch.backends.cudnn.benchmark = True
 

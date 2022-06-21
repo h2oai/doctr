@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, List, Tuple
-
+import numpy as np
 from .datasets import AbstractDataset
 
 __all__ = ["RecognitionDataset"]
@@ -47,6 +47,7 @@ class RecognitionDataset(AbstractDataset):
 
             self.data.append((img_name, label))
         print(length_skips)
+        self.data = np.array(self.data)
     def merge_dataset(self, ds: AbstractDataset) -> None:
         # Update data with new root for self
         self.data = [(str(Path("./" + str(self.root)).joinpath(str(img_path))), label) for img_path, label in self.data]
@@ -55,3 +56,4 @@ class RecognitionDataset(AbstractDataset):
         # Merge with ds data
         for img_path, label in ds.data:
             self.data.append((str(Path(ds.root).joinpath(img_path)), label))
+        self.data = np.array(self.data)
