@@ -142,6 +142,9 @@ def box_iou(boxes_1: np.ndarray, boxes_2: np.ndarray) -> np.ndarray:
         union = (r1 - l1) * (b1 - t1) + ((r2 - l2) * (b2 - t2)).T - intersection
         iou_mat = intersection / union
 
+        # convert nan to 0 in iou_mat
+        iou_mat[np.isnan(iou_mat)] = 0
+
     return iou_mat
 
 
