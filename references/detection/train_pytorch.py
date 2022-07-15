@@ -12,6 +12,7 @@ import hashlib
 import logging
 import multiprocessing as mp
 import time
+import random
 
 import numpy as np
 import torch
@@ -19,13 +20,41 @@ import wandb
 from fastprogress.fastprogress import master_bar, progress_bar
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiplicativeLR, OneCycleLR
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torchvision.transforms import ColorJitter, Compose, Normalize
+from torchvision.transforms import ColorJitter, Compose, Normalize, GaussianBlur, RandomAdjustSharpness
 
 from doctr import transforms as T
 from doctr.datasets import DetectionDataset
 from doctr.models import detection, login_to_hub, push_to_hf_hub
 from doctr.utils.metrics import LocalizationConfusion
 from utils import plot_recorder, plot_samples
+
+
+# https://github.com/qhd1996/seed-everything/blob/master/seed-everything.py
+# this function guarantees reproductivity
+# other packages also support seed options, you can add to this function
+def seed_everything(TORCH_SEED):
+	random.seed(TORCH_SEED)
+	os.environ['PYTHONHASHSEED'] = str(TORCH_SEED)
+	np.random.seed(TORCH_SEED)
+	torch.manual_seed(TORCH_SEED)
+	torch.cuda.manual_seed_all(TORCH_SEED)
+	torch.backends.cudnn.deterministic = True
+	torch.backends.cudnn.benchmark = False
+
+
+def warm_up_cosine_lr_scheduler(optimizer, epochs=100, warm_up_epochs=5, eta_min=1e-9):
+    """ Description: - Warm up cosin learning rate scheduler, first epoch lr is too small Arguments: - optimizer: input optimizer for the training - epochs: int, total epochs for your training, default is 100. NOTE: you should pass correct epochs for your training - warm_up_epochs: int, default is 5, which mean the lr will be warm up for 5 epochs. if warm_up_epochs=0, means no need to warn up, will be as cosine lr scheduler - eta_min: float, setup ConsinAnnealingLR eta_min while warm_up_epochs = 0 Returns: - scheduler """
+    
+    if warm_up_epochs <= 0:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=eta_min)
+    
+    else:
+        warm_up_with_cosine_lr = lambda epoch: eta_min + (epoch / warm_up_epochs) if epoch <= warm_up_epochs else 0.5 * (
+            np.cos((epoch - warm_up_epochs) / (epochs - warm_up_epochs) * np.pi)+1)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warm_up_with_cosine_lr)
+    
+    return scheduler
+
 
 
 def record_lr(
@@ -133,6 +162,11 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
         scheduler.step()
 
         mb.child.comment = f'Training loss: {train_loss.item():.6}'
+        
+        if args.wb:
+            wandb.log({
+                'training_loss': train_loss,
+            })
 
 
 @torch.no_grad()
@@ -169,11 +203,16 @@ def evaluate(model, val_loader, batch_transforms, val_metric, amp=False):
 
 
 def main(args):
-
+    # set the seed
+    seed_everything(777)
     print(args)
 
     if args.push_to_hub:
         login_to_hub()
+
+    # Training monitoring
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    exp_name = f"{args.arch}_{current_time}" if args.name is None else args.name
 
     if not isinstance(args.workers, int):
         args.workers = min(16, mp.cpu_count())
@@ -185,13 +224,13 @@ def main(args):
         img_folder=os.path.join(args.val_path, 'images'),
         label_path=os.path.join(args.val_path, 'labels.json'),
         sample_transforms=T.SampleCompose(
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
-              ] if not args.rotation or args.eval_straight else [])
-            + ([T.Resize(args.input_size, preserve_aspect_ratio=True),  # This does not pad
-                T.RandomRotate(90, expand=True),
-                T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
-                ] if args.rotation and not args.eval_straight else [])
-        ),
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
+              ] if not args.rotation or args.eval_straight else [])),
+        #     + ([T.Resize(args.input_size, preserve_aspect_ratio=True),  # This does not pad
+        #         T.RandomRotate(90, expand=True),
+        #         T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
+        #         ] if args.rotation and not args.eval_straight else [])
+        # ),
         use_polygons=args.rotation and not args.eval_straight,
     )
     val_loader = DataLoader(
@@ -247,6 +286,7 @@ def main(args):
               f"Mean IoU: {mean_iou:.2%})")
         return
 
+
     st = time.time()
     # Load both train and val data generators
     train_set = DetectionDataset(
@@ -256,16 +296,27 @@ def main(args):
             [
                 # Augmentations
                 T.RandomApply(T.ColorInversion(), .1),
-                ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02),
+                T.RandomApply(ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02), .1),
+                # T.GaussianNoise((0,.05),.1),
+                T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.1),
+                T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.1),
+                RandomAdjustSharpness(sharpness_factor=2,p=0.1)
             ]
         ),
         sample_transforms=T.SampleCompose(
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
-              ] if not args.rotation else [])
-            + ([T.Resize(args.input_size, preserve_aspect_ratio=True),
-                T.RandomRotate(90, expand=True),
-                T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
-                ] if args.rotation else [])
+            ([T.RandomCrop(scale=(0.5,1))])
+            # T.RandomRotate(expand=True), T.RandomHorizontalFlip()])
+            + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
+            ] if not args.rotation else [])
+             # add a few more augmentations
+            # ([T.OneOf([T.RandomCrop(scale=(0.5,1)), T.RandomRotate(expand=True), T.RandomHorizontalFlip()])])
+            # + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
+            # ] if not args.rotation else [])
+            # + ([T.Resize(args.input_size, preserve_aspect_ratio=True),
+            #     T.RandomRotate(90, expand=True),
+            #     T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
+            #     ] if args.rotation else [])
+
         ),
         use_polygons=args.rotation,
     )
@@ -292,7 +343,8 @@ def main(args):
     # Backbone freezing
     if args.freeze_backbone:
         for p in model.feat_extractor.parameters():
-            p.reguires_grad_(False)
+            # p.reguires_grad_(False)
+            p.reguires_grad_=False
 
     # Optimizer
     optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], args.lr,
@@ -308,9 +360,14 @@ def main(args):
     elif args.sched == 'onecycle':
         scheduler = OneCycleLR(optimizer, args.lr, args.epochs * len(train_loader))
 
-    # Training monitoring
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    exp_name = f"{args.arch}_{current_time}" if args.name is None else args.name
+
+    if args.warmup_steps >0:
+
+        scheduler = warm_up_cosine_lr_scheduler(optimizer, epochs=args.epochs *len(train_loader), warm_up_epochs=args.warmup_steps, eta_min=args.lr/25e4)
+
+    # # Training monitoring
+    # current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # exp_name = f"{args.arch}_{current_time}" if args.name is None else args.name
 
     # W&B
     if args.wb:
@@ -333,15 +390,24 @@ def main(args):
                 "pretrained": args.pretrained,
                 "rotation": args.rotation,
                 "amp": args.amp,
+                "warmup_epochs": args.warmup_steps,
             }
         )
 
     # Create loss queue
     min_loss = np.inf
+    min_recall = 0
 
     # Training loop
     mb = master_bar(range(args.epochs))
     for epoch in mb:
+
+        if epoch >0:
+            for p in model.feat_extractor.parameters():
+                p.reguires_grad_=True
+
+
+
         fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, mb, amp=args.amp)
         # Validation loop at the end of each epoch
         val_loss, recall, precision, mean_iou = evaluate(model, val_loader, batch_transforms, val_metric, amp=args.amp)
@@ -349,6 +415,12 @@ def main(args):
             print(f"Validation loss decreased {min_loss:.6} --> {val_loss:.6}: saving state...")
             torch.save(model.state_dict(), f"./{exp_name}.pt")
             min_loss = val_loss
+
+        if recall > min_recall:
+            print(f"Validation recall increase : saving state...")
+            torch.save(model.state_dict(), f"./{exp_name}_best.pt")
+            min_recall = recall
+
         log_msg = f"Epoch {epoch + 1}/{args.epochs} - Validation loss: {val_loss:.6} "
         if any(val is None for val in (recall, precision, mean_iou)):
             log_msg += "(Undefined metric value, caused by empty GTs or predictions)"
@@ -362,7 +434,12 @@ def main(args):
                 'recall': recall,
                 'precision': precision,
                 'mean_iou': mean_iou,
+                'learning_rate': optimizer.param_groups[0]["lr"]
             })
+
+
+    # save the final model as well
+    torch.save(model.state_dict(), f"./{exp_name}_{args.epochs}.pt")
 
     if args.wb:
         run.finish()
@@ -404,6 +481,7 @@ def parse_args():
     parser.add_argument('--sched', type=str, default='cosine', help='scheduler to use')
     parser.add_argument("--amp", dest="amp", help="Use Automatic Mixed Precision", action="store_true")
     parser.add_argument('--find-lr', action='store_true', help='Gridsearch the optimal LR')
+    parser.add_argument('--warmup_steps', type=int, default=0, help='learning rate warmup steps')
     args = parser.parse_args()
 
     return args
