@@ -295,18 +295,18 @@ def main(args):
         img_transforms=Compose(
             [
                 # Augmentations
-                T.RandomApply(T.ColorInversion(), .1),
-                T.RandomApply(ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02), .1),
+                T.RandomApply(T.ColorInversion(), .2),
+                T.RandomApply(ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02), .2),
                 # T.GaussianNoise((0,.05),.1),
-                T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.1),
-                T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.1),
-                RandomAdjustSharpness(sharpness_factor=2,p=0.1)
+                T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.2),
+                T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
+                RandomAdjustSharpness(sharpness_factor=2,p=0.2)
             ]
         ),
         sample_transforms=T.SampleCompose(
-            ([T.RandomCrop(scale=(0.5,1))])
-            # T.RandomRotate(expand=True), T.RandomHorizontalFlip()])
-            + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
+            # ([T.RandomCrop(scale=(0.4,1))])
+            # ([T.RandomRotate(90,expand=True)])
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
             ] if not args.rotation else [])
              # add a few more augmentations
             # ([T.OneOf([T.RandomCrop(scale=(0.5,1)), T.RandomRotate(expand=True), T.RandomHorizontalFlip()])])
@@ -405,8 +405,6 @@ def main(args):
         if epoch >0:
             for p in model.feat_extractor.parameters():
                 p.reguires_grad_=True
-
-
 
         fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, mb, amp=args.amp)
         # Validation loop at the end of each epoch

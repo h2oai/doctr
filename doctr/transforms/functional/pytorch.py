@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from torchvision.transforms import functional as F
 
-from doctr.utils.geometry import rotate_abs_geoms
+from doctr.utils.geometry import rotate_abs_geoms, convert_to_relative_coords
 
 from .base import create_shadow_mask, crop_boxes
 
@@ -103,6 +103,7 @@ def crop_detection(
         img, ymin, xmin, ymax - ymin, xmax - xmin
     )
     # Crop the box
+
     boxes = crop_boxes(boxes, crop_box if boxes.max() <= 1 else (xmin, ymin, xmax, ymax))
 
     return cropped_img, boxes

@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Tuple
 import numpy as np
 
 from doctr.utils.repr import NestedObject
+from doctr.utils.geometry import convert_to_relative_coords
 
 from .. import functional as F
 
@@ -250,7 +251,7 @@ class RandomCrop(NestedObject):
     def extra_repr(self) -> str:
         return f"scale={self.scale}, ratio={self.ratio}"
 
-    def __call__(self, img: Any, target: Dict[str, np.ndarray]) -> Tuple[Any, Dict[str, np.ndarray]]:
+    def __call__(self, img: Any, target: np.ndarray) -> Tuple[Any, np.ndarray]:
         scale = random.uniform(self.scale[0], self.scale[1])
         ratio = random.uniform(self.ratio[0], self.ratio[1])
         # Those might overflow
@@ -262,5 +263,7 @@ class RandomCrop(NestedObject):
         xmin, ymin = max(xmin, 0), max(ymin, 0)
         xmax, ymax = min(xmax, 1), min(ymax, 1)
 
-        croped_img, crop_boxes = F.crop_detection(img, target["boxes"], (xmin, ymin, xmax, ymax))
-        return croped_img, dict(boxes=crop_boxes)
+        target_in_cropping = dict(boxes=target)
+        croped_img, crop_boxes = F.crop_detection(img, target_in_cropping["boxes"], (xmin, ymin, xmax, ymax))
+
+        return croped_img, crop_boxes

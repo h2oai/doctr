@@ -42,6 +42,8 @@ def main(args):
         reco_bs=args.batch_size,
         assume_straight_pages=not args.rotation
     )
+    print('aspect_ratio: ', predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio)
+    predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio = True
 
     if args.img_folder and args.label_file:
         testset = datasets.OCRDataset(
@@ -91,6 +93,8 @@ def main(args):
                 crops = extraction_fn(page, gt_boxes)
                 reco_out = predictor.reco_predictor(crops)
             else:
+                torch.cuda.set_device(0)
+                predictor = predictor.cuda()
                 with torch.no_grad():
                     out = predictor(page[None, ...])
                     # We directly crop on PyTorch tensors, which are in channels_first
