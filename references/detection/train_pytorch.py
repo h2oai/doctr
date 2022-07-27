@@ -3,7 +3,9 @@
 # This program is licensed under the Apache License version 2.
 # See LICENSE or go to <https://www.apache.org/licenses/LICENSE-2.0.txt> for full license details.
 
+from math import gamma
 import os
+from tabnanny import verbose
 
 os.environ['USE_TORCH'] = '1'
 
@@ -18,7 +20,7 @@ import numpy as np
 import torch
 import wandb
 from fastprogress.fastprogress import master_bar, progress_bar
-from torch.optim.lr_scheduler import CosineAnnealingLR, MultiplicativeLR, OneCycleLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, MultiplicativeLR, OneCycleLR, StepLR
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torchvision.transforms import ColorJitter, Compose, Normalize, GaussianBlur, RandomAdjustSharpness
 
@@ -134,15 +136,20 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
     if amp:
         scaler = torch.cuda.amp.GradScaler()
 
+    iter_to_accum = 5
+
     model.train()
+    optimizer.zero_grad()
+
     # Iterate over the batches of the dataset
-    for images, targets in progress_bar(train_loader, parent=mb):
+    for batch_idx, (images, targets) in enumerate(progress_bar(train_loader, parent=mb)):
+    # for images, targets in progress_bar(train_loader, parent=mb):
 
         if torch.cuda.is_available():
             images = images.cuda()
         images = batch_transforms(images)
 
-        optimizer.zero_grad()
+        
         if amp:
             with torch.cuda.amp.autocast():
                 train_loss = model(images, targets)['loss']
@@ -155,9 +162,14 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
             scaler.update()
         else:
             train_loss = model(images, targets)['loss']
+            train_loss = train_loss/iter_to_accum
+
             train_loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+
+        if ((batch_idx+1)% iter_to_accum==0) or (batch_idx+1 == len(train_loader)):
             optimizer.step()
+            optimizer.zero_grad()
 
         scheduler.step()
 
@@ -224,7 +236,7 @@ def main(args):
         img_folder=os.path.join(args.val_path, 'images'),
         label_path=os.path.join(args.val_path, 'labels.json'),
         sample_transforms=T.SampleCompose(
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
               ] if not args.rotation or args.eval_straight else [])),
         #     + ([T.Resize(args.input_size, preserve_aspect_ratio=True),  # This does not pad
         #         T.RandomRotate(90, expand=True),
@@ -295,20 +307,43 @@ def main(args):
         img_transforms=Compose(
             [
                 # Augmentations
-                T.RandomApply(T.ColorInversion(), .2),
+                # T.RandomApply(T.ColorInversion(), .2),
                 T.RandomApply(ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02), .2),
                 # T.GaussianNoise((0,.05),.1),
                 T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.2),
-                T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
+                # T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
                 RandomAdjustSharpness(sharpness_factor=2,p=0.2)
             ]
         ),
         sample_transforms=T.SampleCompose(
-            # ([T.RandomCrop(scale=(0.4,1))])
-            # ([T.RandomRotate(90,expand=True)])
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
-            ] if not args.rotation else [])
+        ([T.OneOfSampleCompose([T.RandomCrop(scale=(0.8,1)), 
+                                T.RandomCrop(scale=(0.6,0.8)), 
+                                T.RandomCrop(scale=(0.4,0.6)),
+                                T.RandomCrop(scale=(0.2,0.4)),
+                                T.RandomCrop(scale=(0,0.2))])]) 
+            # ([T.RandomRotate(5,expand=True)])
+            + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
+            ] if not args.rotation else [])),
              # add a few more augmentations
+        # sample_transforms=T.OneOfSampleCompose([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((1024, 512), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((704, 512), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((512, 1024), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((512, 702), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((1024, 784), preserve_aspect_ratio=False, symmetric_pad=False),
+        #                                         T.Resize((784, 1024), preserve_aspect_ratio=False, symmetric_pad=False)]),
+        
+                use_polygons=args.rotation,
+        )
+
+        # T.OneOfSampleCompose([T.RandomCrop(scale=(0.8,1)), 
+        #                         T.RandomCrop(scale=(0.6,0.8)), 
+        #                         T.RandomCrop(scale=(0.4,0.6)),
+        #                         T.RandomCrop(scale=(0.2,0.4)),
+        #                         T.RandomCrop(scale=(0,0.2))])
+            # ([T.RandomRotate(5,expand=True)])
+            # + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
+            # ] if not args.rotation else [])
             # ([T.OneOf([T.RandomCrop(scale=(0.5,1)), T.RandomRotate(expand=True), T.RandomHorizontalFlip()])])
             # + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=True)
             # ] if not args.rotation else [])
@@ -317,9 +352,6 @@ def main(args):
             #     T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
             #     ] if args.rotation else [])
 
-        ),
-        use_polygons=args.rotation,
-    )
 
     train_loader = DataLoader(
         train_set,
@@ -359,6 +391,8 @@ def main(args):
         scheduler = CosineAnnealingLR(optimizer, args.epochs * len(train_loader), eta_min=args.lr / 25e4)
     elif args.sched == 'onecycle':
         scheduler = OneCycleLR(optimizer, args.lr, args.epochs * len(train_loader))
+    elif args.sched == 'steplr':
+        scheduler = StepLR(optimizer, step_size = len(train_loader), gamma=0.5, verbose=True)
 
 
     if args.warmup_steps >0:
@@ -409,6 +443,9 @@ def main(args):
         fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, mb, amp=args.amp)
         # Validation loop at the end of each epoch
         val_loss, recall, precision, mean_iou = evaluate(model, val_loader, batch_transforms, val_metric, amp=args.amp)
+        if epoch ==0:
+            print("save the first epoch")
+            torch.save(model.state_dict(), f"./{exp_name}_1.pt")
         if val_loss < min_loss:
             print(f"Validation loss decreased {min_loss:.6} --> {val_loss:.6}: saving state...")
             torch.save(model.state_dict(), f"./{exp_name}.pt")

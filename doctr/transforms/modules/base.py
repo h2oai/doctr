@@ -14,7 +14,7 @@ from doctr.utils.geometry import convert_to_relative_coords
 
 from .. import functional as F
 
-__all__ = ['SampleCompose', 'ImageTransform', 'ColorInversion', 'OneOf', 'RandomApply', 'RandomRotate', 'RandomCrop']
+__all__ = ['SampleCompose', 'OneOfSampleCompose','ImageTransform', 'ColorInversion', 'OneOf', 'RandomApply', 'RandomRotate', 'RandomCrop']
 
 
 class SampleCompose(NestedObject):
@@ -56,6 +56,49 @@ class SampleCompose(NestedObject):
             x, target = t(x, target)
 
         return x, target
+
+
+class OneOfSampleCompose(NestedObject):
+    """Implements a wrapper that will apply transformations sequentially on both image and target
+
+    .. tabs::
+
+        .. tab:: TensorFlow
+
+            .. code:: python
+
+                >>> import numpy as np
+                >>> import tensorflow as tf
+                >>> from doctr.transforms import SampleCompose, ImageTransform, ColorInversion, RandomRotate
+                >>> transfo = SampleCompose([ImageTransform(ColorInversion((32, 32))), RandomRotate(30)])
+                >>> out, out_boxes = transfo(tf.random.uniform(shape=[64, 64, 3], minval=0, maxval=1), np.zeros((2, 4)))
+
+        .. tab:: PyTorch
+
+            .. code:: python
+
+                >>> import numpy as np
+                >>> import torch
+                >>> from doctr.transforms import SampleCompose, ImageTransform, ColorInversion, RandomRotate
+                >>> transfos = SampleCompose([ImageTransform(ColorInversion((32, 32))), RandomRotate(30)])
+                >>> out, out_boxes = transfos(torch.rand(8, 64, 64, 3), np.zeros((2, 4)))
+
+    Args:
+        transforms: list of transformation modules
+    """
+
+    _children_names: List[str] = ['sample_transforms']
+
+    def __init__(self, transforms: List[Callable[[Any, Any], Tuple[Any, Any]]]) -> None:
+        self.sample_transforms = transforms
+
+    def __call__(self, x: Any, target: Any) -> Tuple[Any, Any]:
+        t = self.sample_transforms[int(random.random() * len(self.sample_transforms))]
+        # for t in self.sample_transforms:
+        x, target = t(x, target)
+
+        return x, target
+
 
 
 class ImageTransform(NestedObject):
@@ -265,5 +308,5 @@ class RandomCrop(NestedObject):
 
         target_in_cropping = dict(boxes=target)
         croped_img, crop_boxes = F.crop_detection(img, target_in_cropping["boxes"], (xmin, ymin, xmax, ymax))
-
+        crop_boxes = crop_boxes.clip(0,1)
         return croped_img, crop_boxes

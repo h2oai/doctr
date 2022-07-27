@@ -12,9 +12,10 @@ from tqdm import tqdm
 
 from doctr import datasets
 from doctr.file_utils import is_tf_available
-from doctr.models import ocr_predictor
+from doctr.models import ocr_predictor, db_resnet50
 from doctr.utils.geometry import extract_crops, extract_rcrops
 from doctr.utils.metrics import LocalizationConfusion, OCRMetric, TextMatch
+from scipy.optimize import linear_sum_assignment
 
 # Enable GPU growth if using TF
 if is_tf_available():
@@ -29,21 +30,60 @@ else:
 def _pct(val):
     return "N/A" if val is None else f"{val:.2%}"
 
+def box_iou(boxes_1: np.ndarray, boxes_2: np.ndarray) -> np.ndarray:
+    """Computes the IoU between two sets of bounding boxes
+
+    Args:
+        boxes_1: bounding boxes of shape (N, 4) in format (xmin, ymin, xmax, ymax)
+        boxes_2: bounding boxes of shape (M, 4) in format (xmin, ymin, xmax, ymax)
+
+    Returns:
+        the IoU matrix of shape (N, M)
+    """
+
+    iou_mat: np.ndarray = np.zeros((boxes_1.shape[0], boxes_2.shape[0]), dtype=np.float32)
+
+    if boxes_1.shape[0] > 0 and boxes_2.shape[0] > 0:
+        l1, t1, r1, b1 = np.split(boxes_1, 4, axis=1)
+        l2, t2, r2, b2 = np.split(boxes_2, 4, axis=1)
+
+        left = np.maximum(l1, l2.T)
+        top = np.maximum(t1, t2.T)
+        right = np.minimum(r1, r2.T)
+        bot = np.minimum(b1, b2.T)
+
+        intersection = np.clip(right - left, 0, np.Inf) * np.clip(bot - top, 0, np.Inf)
+        union = (r1 - l1) * (b1 - t1) + ((r2 - l2) * (b2 - t2)).T - intersection
+        iou_mat = intersection / union
+
+        # convert nan to 0 in iou_mat
+        iou_mat[np.isnan(iou_mat)] = 0
+
+    return iou_mat
+
+
 
 def main(args):
 
     if not args.rotation:
         args.eval_straight = True
 
+    # switch to customized models
+    det_detector = db_resnet50(pretrained=False)
+    det_detector.load_state_dict(torch.load("/home/mzhao/Data/work/DocAI/src/doctr/db_resnet50_receipt2_ga5_7rs_wp500_1.pt",map_location='cpu'))
+
     predictor = ocr_predictor(
-        args.detection,
-        args.recognition,
+        det_arch=det_detector,
+        # det_arch = args.detection,
+        reco_arch=args.recognition,
         pretrained=True,
         reco_bs=args.batch_size,
         assume_straight_pages=not args.rotation
     )
     print('aspect_ratio: ', predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio)
-    predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio = True
+    # predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio = True
+    print(predictor.det_predictor.pre_processor.resize.size)
+    # predictor.det_predictor.pre_processor.resize.size = (1536,1536)
 
     if args.img_folder and args.label_file:
         testset = datasets.OCRDataset(
@@ -55,6 +95,7 @@ def main(args):
         train_set = datasets.__dict__[args.dataset](train=True, download=True, use_polygons=not args.eval_straight)
         val_set = datasets.__dict__[args.dataset](train=False, download=True, use_polygons=not args.eval_straight)
         sets = [train_set, val_set]
+        # sets = [val_set]
 
     reco_metric = TextMatch()
     if args.mask_shape:
@@ -75,8 +116,9 @@ def main(args):
     sample_idx = 0
     extraction_fn = extract_crops if args.eval_straight else extract_rcrops
 
+    bad_file_list = []
     for dataset in sets:
-        for page, target in tqdm(dataset):
+        for idx, (page, target) in tqdm(enumerate(dataset)):
             # GT
             gt_boxes = target['boxes']
             gt_labels = target['labels']
@@ -158,6 +200,24 @@ def main(args):
                                         pred_boxes.append([[x1, y1], [x2, y2], [x3, y3], [x4, y4]])
                             pred_labels.append(word.value)
 
+            # try output bad predictions
+            iou_mat = box_iou(gt_boxes, np.asarray(pred_boxes))
+            gt_indices, pred_indices = linear_sum_assignment(-iou_mat)
+            matches =  int((iou_mat[gt_indices, pred_indices] >= 0.5).sum())
+            match_pet = matches/len(gt_boxes)
+
+            # print(match_pet)
+            if match_pet <0.1:
+                print(match_pet)
+                print(len(pred_boxes))
+                print(pred_boxes)
+                print(len(gt_boxes))
+                print(gt_boxes)
+                print(dataset.data[idx][0])
+                
+                bad_file_list.append(dataset[idx][0])            
+
+            
             # Update the metric
             det_metric.update(gt_boxes, np.asarray(pred_boxes))
             reco_metric.update(gt_labels, reco_words)

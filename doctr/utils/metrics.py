@@ -408,6 +408,7 @@ class LocalizationConfusion:
             gt_indices, pred_indices = linear_sum_assignment(-iou_mat)
             self.matches += int((iou_mat[gt_indices, pred_indices] >= self.iou_thresh).sum())
 
+
         # Update counts
         self.num_gts += gts.shape[0]
         self.num_preds += preds.shape[0]
