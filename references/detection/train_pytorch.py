@@ -136,14 +136,14 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
     if amp:
         scaler = torch.cuda.amp.GradScaler()
 
-    iter_to_accum = 5
+    # iter_to_accum = 5
 
     model.train()
     optimizer.zero_grad()
 
     # Iterate over the batches of the dataset
-    for batch_idx, (images, targets) in enumerate(progress_bar(train_loader, parent=mb)):
-    # for images, targets in progress_bar(train_loader, parent=mb):
+    # for batch_idx, (images, targets) in enumerate(progress_bar(train_loader, parent=mb)):
+    for images, targets in progress_bar(train_loader, parent=mb):
 
         if torch.cuda.is_available():
             images = images.cuda()
@@ -162,12 +162,12 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
             scaler.update()
         else:
             train_loss = model(images, targets)['loss']
-            train_loss = train_loss/iter_to_accum
+            # train_loss = train_loss/iter_to_accum
 
             train_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
 
-        if ((batch_idx+1)% iter_to_accum==0) or (batch_idx+1 == len(train_loader)):
+        # if ((batch_idx+1)% iter_to_accum==0) or (batch_idx+1 == len(train_loader)):
             optimizer.step()
             optimizer.zero_grad()
 
@@ -234,7 +234,7 @@ def main(args):
     st = time.time()
     val_set = DetectionDataset(
         img_folder=os.path.join(args.val_path, 'images'),
-        label_path=os.path.join(args.val_path, 'labels.json'),
+        label_path=os.path.join(args.val_path, 'val_labels.json'),
         sample_transforms=T.SampleCompose(
             ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
               ] if not args.rotation or args.eval_straight else [])),
@@ -303,12 +303,12 @@ def main(args):
     # Load both train and val data generators
     train_set = DetectionDataset(
         img_folder=os.path.join(args.train_path, 'images'),
-        label_path=os.path.join(args.train_path, 'labels.json'),
+        label_path=os.path.join(args.train_path, 'train_labels.json'),
         img_transforms=Compose(
             [
                 # Augmentations
-                # T.RandomApply(T.ColorInversion(), .2),
-                T.RandomApply(ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.02), .2),
+                T.RandomApply(T.ColorInversion(), .2),
+                T.RandomApply(ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.02), .2),
                 # T.GaussianNoise((0,.05),.1),
                 T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.2),
                 # T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
@@ -318,21 +318,13 @@ def main(args):
         sample_transforms=T.SampleCompose(
         ([T.OneOfSampleCompose([T.RandomCrop(scale=(0.8,1)), 
                                 T.RandomCrop(scale=(0.6,0.8)), 
-                                T.RandomCrop(scale=(0.4,0.6)),
-                                T.RandomCrop(scale=(0.2,0.4)),
-                                T.RandomCrop(scale=(0,0.2))])]) 
+                                T.RandomCrop(scale=(0.4,0.6))
+                                # T.RandomCrop(scale=(0.2,0.4)),
+                                # T.RandomCrop(scale=(0,0.2))
+                                ])]) 
             # ([T.RandomRotate(5,expand=True)])
             + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
             ] if not args.rotation else [])),
-             # add a few more augmentations
-        # sample_transforms=T.OneOfSampleCompose([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((1024, 512), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((704, 512), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((512, 1024), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((512, 702), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((1024, 784), preserve_aspect_ratio=False, symmetric_pad=False),
-        #                                         T.Resize((784, 1024), preserve_aspect_ratio=False, symmetric_pad=False)]),
-        
                 use_polygons=args.rotation,
         )
 
@@ -436,7 +428,7 @@ def main(args):
     mb = master_bar(range(args.epochs))
     for epoch in mb:
 
-        if epoch >0:
+        if epoch >2:
             for p in model.feat_extractor.parameters():
                 p.reguires_grad_=True
 

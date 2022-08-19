@@ -70,7 +70,7 @@ def main(args):
 
     # switch to customized models
     det_detector = db_resnet50(pretrained=False)
-    det_detector.load_state_dict(torch.load("/home/mzhao/Data/work/DocAI/src/doctr/db_resnet50_receipt2_ga5_7rs_wp500_1.pt",map_location='cpu'))
+    det_detector.load_state_dict(torch.load("/home/mzhao/Data/work/DocAI/src/doctr/db_resnet50_receipt2_ga5_3rc_f3.pt",map_location='cpu'))
 
     predictor = ocr_predictor(
         det_arch=det_detector,
@@ -83,7 +83,7 @@ def main(args):
     print('aspect_ratio: ', predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio)
     # predictor.det_predictor.pre_processor.resize.preserve_aspect_ratio = True
     print(predictor.det_predictor.pre_processor.resize.size)
-    # predictor.det_predictor.pre_processor.resize.size = (1536,1536)
+    predictor.det_predictor.pre_processor.resize.size = (1536,1536)
 
     if args.img_folder and args.label_file:
         testset = datasets.OCRDataset(
@@ -95,7 +95,7 @@ def main(args):
         train_set = datasets.__dict__[args.dataset](train=True, download=True, use_polygons=not args.eval_straight)
         val_set = datasets.__dict__[args.dataset](train=False, download=True, use_polygons=not args.eval_straight)
         sets = [train_set, val_set]
-        # sets = [val_set]
+        # sets = [train_set]
 
     reco_metric = TextMatch()
     if args.mask_shape:
@@ -151,9 +151,9 @@ def main(args):
             # Unpack preds
             pred_boxes = []
             pred_labels = []
-            for page in out.pages:
-                height, width = page.dimensions
-                for block in page.blocks:
+            for _page in out.pages:
+                height, width = _page.dimensions
+                for block in _page.blocks:
                     for line in block.lines:
                         for word in line.words:
                             if not args.rotation:
@@ -207,13 +207,14 @@ def main(args):
             match_pet = matches/len(gt_boxes)
 
             # print(match_pet)
-            if match_pet <0.1:
+            if match_pet <0.5:
                 print(match_pet)
                 print(len(pred_boxes))
-                print(pred_boxes)
+                # print(pred_boxes)
                 print(len(gt_boxes))
-                print(gt_boxes)
+                # print(gt_boxes)
                 print(dataset.data[idx][0])
+                # print(page)
                 
                 bad_file_list.append(dataset[idx][0])            
 
