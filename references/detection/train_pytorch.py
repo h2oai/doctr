@@ -22,7 +22,7 @@ import wandb
 from fastprogress.fastprogress import master_bar, progress_bar
 from torch.optim.lr_scheduler import CosineAnnealingLR, MultiplicativeLR, OneCycleLR, StepLR
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from torchvision.transforms import ColorJitter, Compose, Normalize, GaussianBlur, RandomAdjustSharpness
+from torchvision.transforms import ColorJitter, Compose, Normalize, GaussianBlur, RandomAdjustSharpness, Grayscale
 
 from doctr import transforms as T
 from doctr.datasets import DetectionDataset
@@ -234,7 +234,7 @@ def main(args):
     st = time.time()
     val_set = DetectionDataset(
         img_folder=os.path.join(args.val_path, 'images'),
-        label_path=os.path.join(args.val_path, 'val_labels.json'),
+        label_path=os.path.join(args.val_path, 'valid_labels.json'),
         sample_transforms=T.SampleCompose(
             ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
               ] if not args.rotation or args.eval_straight else [])),
@@ -256,7 +256,7 @@ def main(args):
     )
     print(f"Validation set loaded in {time.time() - st:.4}s ({len(val_set)} samples in "
           f"{len(val_loader)} batches)")
-    with open(os.path.join(args.val_path, 'labels.json'), 'rb') as f:
+    with open(os.path.join(args.val_path, 'valid_labels.json'), 'rb') as f:
         val_hash = hashlib.sha256(f.read()).hexdigest()
 
     batch_transforms = Normalize(mean=(0.798, 0.785, 0.772), std=(0.264, 0.2749, 0.287))
@@ -307,23 +307,24 @@ def main(args):
         img_transforms=Compose(
             [
                 # Augmentations
-                T.RandomApply(T.ColorInversion(), .2),
+                T.RandomApply(Grayscale(3), .5),
+                # T.RandomApply(T.ColorInversion(), .2),
                 T.RandomApply(ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.02), .2),
                 # T.GaussianNoise((0,.05),.1),
                 T.RandomApply(T.RandomShadow(opacity_range = (0.1,0.2)),.2),
-                # T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
+                T.RandomApply(GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),p=0.2),
                 RandomAdjustSharpness(sharpness_factor=2,p=0.2)
             ]
         ),
         sample_transforms=T.SampleCompose(
-        ([T.OneOfSampleCompose([T.RandomCrop(scale=(0.8,1)), 
-                                T.RandomCrop(scale=(0.6,0.8)), 
-                                T.RandomCrop(scale=(0.4,0.6))
+        # ([T.OneOfSampleCompose([T.RandomCrop(scale=(0.8,1)), 
+        #                         T.RandomCrop(scale=(0.6,0.8)), 
+        #                         T.RandomCrop(scale=(0.4,0.6))
                                 # T.RandomCrop(scale=(0.2,0.4)),
                                 # T.RandomCrop(scale=(0,0.2))
-                                ])]) 
+                                # ])]) 
             # ([T.RandomRotate(5,expand=True)])
-            + ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
             ] if not args.rotation else [])),
                 use_polygons=args.rotation,
         )
@@ -356,7 +357,7 @@ def main(args):
     )
     print(f"Train set loaded in {time.time() - st:.4}s ({len(train_set)} samples in "
           f"{len(train_loader)} batches)")
-    with open(os.path.join(args.train_path, 'labels.json'), 'rb') as f:
+    with open(os.path.join(args.train_path, 'train_labels.json'), 'rb') as f:
         train_hash = hashlib.sha256(f.read()).hexdigest()
 
     if args.show_samples:
