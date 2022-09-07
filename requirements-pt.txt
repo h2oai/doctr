@@ -5,7 +5,7 @@ opencv-python>=3.4.5.20
 # PyMuPDF>=1.16.0,!=1.18.11,!=1.18.12
 pyclipper>=1.2.0
 shapely>=1.6.0
-matplotlib>=3.1.0,<3.4.3
+matplotlib>=3.1.0,<3.5.4
 mplcursors>=0.3
 weasyprint>=52.2,<53.0
 unidecode>=1.0.0
