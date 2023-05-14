@@ -3,9 +3,7 @@
 # This program is licensed under the Apache License version 2.
 # See LICENSE or go to <https://www.apache.org/licenses/LICENSE-2.0.txt> for full license details.
 
-from math import gamma
 import os
-from tabnanny import verbose
 
 os.environ['USE_TORCH'] = '1'
 
@@ -17,6 +15,7 @@ import time
 import random
 
 import numpy as np
+import psutil
 import torch
 import wandb
 from fastprogress.fastprogress import master_bar, progress_bar
@@ -139,7 +138,7 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
     # iter_to_accum = 5
 
     model.train()
-    optimizer.zero_grad()
+
 
     # Iterate over the batches of the dataset
     # for batch_idx, (images, targets) in enumerate(progress_bar(train_loader, parent=mb)):
@@ -149,7 +148,7 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
             images = images.cuda()
         images = batch_transforms(images)
 
-        
+        optimizer.zero_grad()
         if amp:
             with torch.cuda.amp.autocast():
                 train_loss = model(images, targets)['loss']
@@ -169,7 +168,6 @@ def fit_one_epoch(model, train_loader, batch_transforms, optimizer, scheduler, m
 
         # if ((batch_idx+1)% iter_to_accum==0) or (batch_idx+1 == len(train_loader)):
             optimizer.step()
-            optimizer.zero_grad()
 
         scheduler.step()
 
@@ -200,11 +198,13 @@ def evaluate(model, val_loader, batch_transforms, val_metric, amp=False):
             out = model(images, targets, return_preds=True)
         # Compute metric
         loc_preds = out['preds']
-        for boxes_gt, boxes_pred in zip(targets, loc_preds):
-            if args.rotation and args.eval_straight:
+        for target, loc_pred in zip(targets, loc_preds):
+            
+            for boxes_gt, boxes_pred in zip(target.values(), loc_pred.values()):
+                if args.rotation and args.eval_straight:
                 # Convert pred to boxes [xmin, ymin, xmax, ymax]  N, 4, 2 --> N, 4
-                boxes_pred = np.concatenate((boxes_pred.min(axis=1), boxes_pred.max(axis=1)), axis=-1)
-            val_metric.update(gts=boxes_gt, preds=boxes_pred[:, :4])
+                    boxes_pred = np.concatenate((boxes_pred.min(axis=1), boxes_pred.max(axis=1)), axis=-1)
+                val_metric.update(gts=boxes_gt, preds=boxes_pred[:, :4])
 
         val_loss += out['loss'].item()
         batch_cnt += 1
@@ -230,13 +230,14 @@ def main(args):
         args.workers = min(16, mp.cpu_count())
 
     torch.backends.cudnn.benchmark = True
+    system_available_memory = int(psutil.virtual_memory().available / 1024**3)
 
     st = time.time()
     val_set = DetectionDataset(
         img_folder=os.path.join(args.val_path, 'images'),
         label_path=os.path.join(args.val_path, 'valid_labels.json'),
         sample_transforms=T.SampleCompose(
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
               ] if not args.rotation or args.eval_straight else [])),
         #     + ([T.Resize(args.input_size, preserve_aspect_ratio=True),  # This does not pad
         #         T.RandomRotate(90, expand=True),
@@ -262,7 +263,11 @@ def main(args):
     batch_transforms = Normalize(mean=(0.798, 0.785, 0.772), std=(0.264, 0.2749, 0.287))
 
     # Load doctr model
-    model = detection.__dict__[args.arch](pretrained=args.pretrained, assume_straight_pages=not args.rotation)
+    model = detection.__dict__[args.arch](
+        pretrained=args.pretrained, 
+        assume_straight_pages=not args.rotation,
+        class_names = val_set.class_names,
+    )
 
     # Resume weights
     if isinstance(args.resume, str):
@@ -288,7 +293,8 @@ def main(args):
     # Metrics
     val_metric = LocalizationConfusion(
         use_polygons=args.rotation and not args.eval_straight,
-        mask_shape=(args.input_size, args.input_size)
+        mask_shape=(args.input_size, args.input_size),
+        use_broadcasting=True if system_available_memory > 62 else False,
     )
 
     if args.test_only:
@@ -324,7 +330,7 @@ def main(args):
                                 # T.RandomCrop(scale=(0,0.2))
                                 # ])]) 
             # ([T.RandomRotate(5,expand=True)])
-            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=False, symmetric_pad=False)
+            ([T.Resize((args.input_size, args.input_size), preserve_aspect_ratio=True, symmetric_pad=True)
             ] if not args.rotation else [])),
                 use_polygons=args.rotation,
         )
@@ -372,8 +378,11 @@ def main(args):
             p.reguires_grad_=False
 
     # Optimizer
-    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], args.lr,
-                                 betas=(0.95, 0.99), eps=1e-6, weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], 
+                                 args.lr,
+                                 betas=(0.95, 0.99), 
+                                 eps=1e-6, weight_decay=args.weight_decay,
+                                )
     # LR Finder
     if args.find_lr:
         lrs, losses = record_lr(model, train_loader, batch_transforms, optimizer, amp=args.amp)
