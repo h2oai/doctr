@@ -7,7 +7,6 @@ import os
 from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
-import onnxruntime as ort
 import torch
 from openvino.runtime import Core
 from torch import nn
