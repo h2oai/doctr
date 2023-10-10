@@ -8,7 +8,6 @@ from copy import deepcopy
 from itertools import groupby
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import onnxruntime as ort
 import torch
 from openvino.runtime import Core
 from torch import nn
