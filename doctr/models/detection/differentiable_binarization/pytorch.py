@@ -29,13 +29,14 @@ default_cfgs: Dict[str, Dict[str, Any]] = {
         "input_shape": (3, 1024, 1024),
         "mean": (0.798, 0.785, 0.772),
         "std": (0.264, 0.2749, 0.287),
-        "url": "https://doctr-static.mindee.com/models?id=v0.3.1/db_resnet50-ac60cadc.pt&src=0",
+        # "url": "https://doctr-static.mindee.com/models?id=v0.3.1/db_resnet50-ac60cadc.pt&src=0",
+        "url": "https://doctr-static.mindee.com/models?id=v0.7.0/db_resnet50-79bd7d70.pt&src=0", # New URL for v0.7.0
     },
     'db_resnet50_onnx': {
         'input_shape': (3, 1024, 1024),
         'mean': (0.798, 0.785, 0.772),
         'std': (0.264, 0.2749, 0.287),
-        'url': 'https://github.com/h2oai/doctr/releases/download/onnx_models/db_resnet50.onnx',
+        'url': 'https://github.com/h2oai/doctr/releases/download/onnx_model_0.8/db_resnet50.onnx'
     },
     'db_resnet34': {
         'input_shape': (3, 1024, 1024),
@@ -300,6 +301,8 @@ def _dbnet(
     # Load pretrained parameters
     if pretrained:
         load_pretrained_params(model, default_cfgs[arch]["url"])
+        print(f"Loaded pretrained parameters for {arch}")
+        print(f"Pretrained parameters loaded from {default_cfgs[arch]['url']}")
 
     return model
 
