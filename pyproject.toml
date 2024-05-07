@@ -47,11 +47,11 @@ dependencies = [
     "Pillow>=8.3.2",  # cf. https://github.com/advisories/GHSA-98vv-pw6r-q6q4
     "defusedxml>=0.7.0",
     "mplcursors>=0.3",
-    "unidecode>=1.0.0",
+    "anyascii==0.3.2",
     "tqdm>=4.30.0",
     "rapidfuzz>=1.6.0",
     "huggingface-hub>=0.4.0",
-    "openvino==2022.3.1"
+    "openvino==2024.1.0"
 ]
 
 [project.optional-dependencies]
