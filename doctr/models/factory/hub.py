@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -7,8 +7,8 @@
 
 import json
 import logging
-import os
 import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -16,9 +16,7 @@ from typing import Any
 import torch
 from huggingface_hub import (
     HfApi,
-    Repository,
     get_token,
-    get_token_permission,
     hf_hub_download,
     login,
 )
@@ -32,15 +30,16 @@ AVAILABLE_ARCHS = {
     "classification": models.classification.zoo.ARCHS + models.classification.zoo.ORIENTATION_ARCHS,
     "detection": models.detection.zoo.ARCHS,
     "recognition": models.recognition.zoo.ARCHS,
+    "layout": models.layout.zoo.ARCHS,
 }
 
 
 def login_to_hub() -> None:  # pragma: no cover
     """Login to huggingface hub"""
     access_token = get_token()
-    if access_token is not None and get_token_permission(access_token):
+    if access_token is not None:
         logging.info("Huggingface Hub token found and valid")
-        login(token=access_token, write_permission=True)
+        login(token=access_token)
     else:
         login()
     # check if git lfs is installed
@@ -98,14 +97,19 @@ def push_to_hf_hub(model: Any, model_name: str, task: str, **kwargs) -> None:  #
 
     if run_config is None and arch is None:
         raise ValueError("run_config or arch must be specified")
-    if task not in ["classification", "detection", "recognition"]:
-        raise ValueError("task must be one of classification, detection, recognition")
+    if task not in ["classification", "detection", "recognition", "layout"]:
+        raise ValueError("task must be one of classification, detection, recognition, layout")
 
     # default readme
     readme = textwrap.dedent(
-        f"""
-
+        f"""---
     language: en
+    tags:
+    - ocr
+    - pytorch
+    - doctr
+    - {task}
+    ---
 
 
     <p align="center">
@@ -161,16 +165,25 @@ def push_to_hf_hub(model: Any, model_name: str, task: str, **kwargs) -> None:  #
 
     commit_message = f"Add {model_name} model"
 
-    local_cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub", model_name)
-    repo_url = HfApi().create_repo(model_name, token=get_token(), exist_ok=False)
-    repo = Repository(local_dir=local_cache_dir, clone_from=repo_url)
+    # Create repository
+    api = HfApi()
+    repo_url = api.create_repo(model_name, token=get_token(), repo_type="model", exist_ok=False)
+    full_repo_id = repo_url.repo_id
 
-    with repo.commit(commit_message):
-        _save_model_and_config_for_hf_hub(model, repo.local_dir, arch=arch, task=task)
-        readme_path = Path(repo.local_dir) / "README.md"
+    # Save model files to a temporary directory
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        _save_model_and_config_for_hf_hub(model, tmp_dir, arch=arch, task=task)
+        readme_path = Path(tmp_dir) / "README.md"
         readme_path.write_text(readme)
 
-    repo.git_push()
+        # Upload all files to the hub
+        api.upload_folder(
+            folder_path=tmp_dir,
+            repo_id=full_repo_id,
+            repo_type="model",
+            commit_message=commit_message,
+            token=get_token(),
+        )
 
 
 def from_hub(repo_id: str, **kwargs: Any):
@@ -203,6 +216,8 @@ def from_hub(repo_id: str, **kwargs: Any):
         model = models.detection.__dict__[arch](pretrained=False)
     elif task == "recognition":
         model = models.recognition.__dict__[arch](pretrained=False, input_shape=cfg["input_shape"], vocab=cfg["vocab"])
+    elif task == "layout":
+        model = models.layout.__dict__[arch](pretrained=False, class_names=cfg["class_names"])
 
     # update model cfg
     model.cfg = cfg

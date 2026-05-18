@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -66,7 +66,7 @@ class _CharacterGenerator(AbstractDataset):
     ) -> None:
         self.vocab = vocab
         self._num_samples = num_samples
-        self.font_family = font_family if isinstance(font_family, list) else [font_family]  # type: ignore[list-item]
+        self.font_family = font_family if isinstance(font_family, list) else [font_family]
         # Validate fonts
         if isinstance(font_family, list):
             for font in self.font_family:
@@ -116,7 +116,7 @@ class _WordGenerator(AbstractDataset):
         self.vocab = vocab
         self.wordlen_range = (min_chars, max_chars)
         self._num_samples = num_samples
-        self.font_family = font_family if isinstance(font_family, list) else [font_family]  # type: ignore[list-item]
+        self.font_family = font_family if isinstance(font_family, list) else [font_family]
         # Validate fonts
         if isinstance(font_family, list):
             for font in self.font_family:

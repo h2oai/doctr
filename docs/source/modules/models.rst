@@ -45,6 +45,10 @@ doctr.models.classification
 
 .. autofunction:: doctr.models.classification.vip_base
 
+.. autofunction:: doctr.models.classification.vit_det_s
+
+.. autofunction:: doctr.models.classification.vit_det_m
+
 .. autofunction:: doctr.models.classification.crop_orientation_predictor
 
 .. autofunction:: doctr.models.classification.page_orientation_predictor
@@ -70,6 +74,14 @@ doctr.models.detection
 .. autofunction:: doctr.models.detection.fast_base
 
 .. autofunction:: doctr.models.detection.detection_predictor
+
+
+doctr.models.layout
+-------------------
+
+.. autofunction:: doctr.models.layout.lw_detr_s
+
+.. autofunction:: doctr.models.layout.lw_detr_m
 
 
 doctr.models.recognition

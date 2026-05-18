@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -51,7 +51,7 @@ class DetectionPredictor(nn.Module):
 
         processed_batches = self.pre_processor(pages)
         _params = next(self.model.parameters())
-        self.model, processed_batches = set_device_and_dtype(
+        self.model, processed_batches = set_device_and_dtype(  # type: ignore[assignment]
             self.model, processed_batches, _params.device, _params.dtype
         )
         predicted_batches = [

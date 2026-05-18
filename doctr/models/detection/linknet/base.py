@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -12,6 +12,7 @@ import pyclipper
 from shapely.geometry import Polygon
 
 from doctr.models.core import BaseModel
+from doctr.utils import order_points
 
 from ..core import DetectionPostProcessor
 
@@ -78,7 +79,7 @@ class LinkNetPostProcessor(DetectionPostProcessor):
         return (
             cv2.boundingRect(expanded_points)  # type: ignore[return-value]
             if self.assume_straight_pages
-            else np.roll(cv2.boxPoints(cv2.minAreaRect(expanded_points)), -1, axis=0)
+            else order_points(cv2.boxPoints(cv2.minAreaRect(expanded_points)))
         )
 
     def bitmap_to_boxes(

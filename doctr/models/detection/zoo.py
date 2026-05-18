@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -50,8 +50,8 @@ def _predictor(arch: Any, pretrained: bool, assume_straight_pages: bool = True, 
             raise ValueError(f"unknown architecture: {type(arch)}")
 
         _model = arch
-        _model.assume_straight_pages = assume_straight_pages
-        _model.postprocessor.assume_straight_pages = assume_straight_pages
+        _model.assume_straight_pages = assume_straight_pages  # type: ignore[attr-defined]
+        _model.postprocessor.assume_straight_pages = assume_straight_pages  # type: ignore[attr-defined]
 
     kwargs.pop("pretrained_backbone", None)
 

@@ -1,9 +1,10 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -41,6 +42,7 @@ class Resize(T.Resize):
             if True, the image will be resized to fit within the target size while maintaining its aspect ratio
         symmetric_pad: whether to symmetrically pad the image to the target size,
             if True, the image will be padded equally on both sides to fit the target size
+        return_padding_mask: whether to return a padding mask indicating the padded areas of the image
     """
 
     def __init__(
@@ -49,25 +51,75 @@ class Resize(T.Resize):
         interpolation=F.InterpolationMode.BILINEAR,
         preserve_aspect_ratio: bool = False,
         symmetric_pad: bool = False,
+        return_padding_mask: bool = False,
     ) -> None:
         super().__init__(size if isinstance(size, (list, tuple)) else (size, size), interpolation, antialias=True)
         self.preserve_aspect_ratio = preserve_aspect_ratio
         self.symmetric_pad = symmetric_pad
+        self.return_padding_mask = return_padding_mask
+
+    def _resize_target(
+        self,
+        target: np.ndarray,
+        raw_shape: Sequence[int],
+        final_shape: Sequence[int],
+        symmetric_pad: bool = False,
+        offset: tuple[int, int] = (0, 0),
+    ) -> np.ndarray:
+        """Resize the target boxes according to the resizing of the image and the padding if needed"""
+        target = target.copy()
+
+        if target.shape[1:] == (4,):
+            if symmetric_pad:
+                target[:, [0, 2]] = offset[0] + target[:, [0, 2]] * raw_shape[-1] / final_shape[-1]
+                target[:, [1, 3]] = offset[1] + target[:, [1, 3]] * raw_shape[-2] / final_shape[-2]
+            else:
+                target[:, [0, 2]] *= raw_shape[-1] / final_shape[-1]
+                target[:, [1, 3]] *= raw_shape[-2] / final_shape[-2]
+
+        elif target.shape[1:] == (4, 2):
+            if symmetric_pad:
+                target[..., 0] = offset[0] + target[..., 0] * raw_shape[-1] / final_shape[-1]
+                target[..., 1] = offset[1] + target[..., 1] * raw_shape[-2] / final_shape[-2]
+            else:
+                target[..., 0] *= raw_shape[-1] / final_shape[-1]
+                target[..., 1] *= raw_shape[-2] / final_shape[-2]
+
+        else:
+            raise AssertionError("Boxes should be in the format (n_boxes, 4, 2) or (n_boxes, 4)")
+
+        return np.clip(target, 0, 1)
 
     def forward(
         self,
         img: torch.Tensor,
         target: np.ndarray | None = None,
-    ) -> torch.Tensor | tuple[torch.Tensor, np.ndarray]:
+    ) -> (
+        torch.Tensor
+        | tuple[torch.Tensor, np.ndarray]
+        | tuple[torch.Tensor, np.ndarray, torch.Tensor]
+        | tuple[torch.Tensor, torch.Tensor]
+    ):
         target_ratio = self.size[0] / self.size[1]
         actual_ratio = img.shape[-2] / img.shape[-1]
 
         if not self.preserve_aspect_ratio or (target_ratio == actual_ratio):
             # If we don't preserve the aspect ratio or the wanted aspect ratio is the same than the original one
             # We can use with the regular resize
+            img = super().forward(img)
+
+            if self.return_padding_mask:
+                padding_mask = torch.zeros(self.size, dtype=torch.bool, device=img.device)
+
             if target is not None:
-                return super().forward(img), target
-            return super().forward(img)
+                if self.return_padding_mask:
+                    return img, target, padding_mask
+                return img, target
+
+            if self.return_padding_mask:
+                return img, padding_mask
+
+            return img
         else:
             # Resize
             if actual_ratio > target_ratio:
@@ -87,31 +139,49 @@ class Resize(T.Resize):
                 # Pad image
                 img = pad(img, _pad)
 
+                if self.return_padding_mask:
+                    h, w = self.size
+                    padding_mask = torch.zeros((h, w), dtype=torch.bool, device=img.device)
+
+                    left, right, top, bottom = _pad
+                    padding_mask[top : h - bottom, left : w - right] = True
+
             # In case boxes are provided, resize boxes if needed (for detection task if preserve aspect ratio)
             if target is not None:
                 if self.symmetric_pad:
-                    offset = half_pad[0] / img.shape[-1], half_pad[1] / img.shape[-2]
+                    offset = (
+                        half_pad[0] / img.shape[-1],
+                        half_pad[1] / img.shape[-2],
+                    )
+                else:
+                    offset = (0, 0)
 
-                if self.preserve_aspect_ratio:
-                    # Get absolute coords
-                    if target.shape[1:] == (4,):
-                        if self.symmetric_pad:
-                            target[:, [0, 2]] = offset[0] + target[:, [0, 2]] * raw_shape[-1] / img.shape[-1]
-                            target[:, [1, 3]] = offset[1] + target[:, [1, 3]] * raw_shape[-2] / img.shape[-2]
-                        else:
-                            target[:, [0, 2]] *= raw_shape[-1] / img.shape[-1]
-                            target[:, [1, 3]] *= raw_shape[-2] / img.shape[-2]
-                    elif target.shape[1:] == (4, 2):
-                        if self.symmetric_pad:
-                            target[..., 0] = offset[0] + target[..., 0] * raw_shape[-1] / img.shape[-1]
-                            target[..., 1] = offset[1] + target[..., 1] * raw_shape[-2] / img.shape[-2]
-                        else:
-                            target[..., 0] *= raw_shape[-1] / img.shape[-1]
-                            target[..., 1] *= raw_shape[-2] / img.shape[-2]
-                    else:
-                        raise AssertionError("Boxes should be in the format (n_boxes, 4, 2) or (n_boxes, 4)")
+                if isinstance(target, dict):
+                    target = {
+                        cls_name: self._resize_target(
+                            arr,
+                            raw_shape,
+                            img.shape[-2:],
+                            symmetric_pad=self.symmetric_pad,
+                            offset=offset,
+                        )
+                        for cls_name, arr in target.items()
+                    }
+                else:
+                    target = self._resize_target(
+                        target,
+                        raw_shape,
+                        img.shape[-2:],
+                        symmetric_pad=self.symmetric_pad,
+                        offset=offset,
+                    )
+            if target is not None:
+                if self.return_padding_mask:
+                    return img, target, padding_mask
+                return img, target
 
-                return img, np.clip(target, 0, 1)
+            if self.return_padding_mask:
+                return img, padding_mask
 
             return img
 
@@ -201,16 +271,30 @@ class ChannelShuffle(torch.nn.Module):
 class RandomHorizontalFlip(T.RandomHorizontalFlip):
     """Randomly flip the input image horizontally"""
 
-    def forward(self, img: torch.Tensor | Image, target: np.ndarray) -> tuple[torch.Tensor | Image, np.ndarray]:
+    def _flip_array(self, target):
+        _target = target.copy()
+        # Changing the relative bbox coordinates
+        if target.shape[1:] == (4,):
+            _target[:, ::2] = 1 - target[:, [2, 0]]
+        else:
+            _target[..., 0] = 1 - target[..., 0]
+
+        return _target
+
+    def forward(
+        self,
+        img: torch.Tensor | Image,
+        target: np.ndarray | dict[str, np.ndarray],
+    ) -> tuple[torch.Tensor | Image, np.ndarray | dict[str, np.ndarray]]:
+
         if torch.rand(1) < self.p:
             _img = F.hflip(img)
-            _target = target.copy()
-            # Changing the relative bbox coordinates
-            if target.shape[1:] == (4,):
-                _target[:, ::2] = 1 - target[:, [2, 0]]
-            else:
-                _target[..., 0] = 1 - target[..., 0]
-            return _img, _target
+
+            if isinstance(target, dict):
+                return _img, {cls_name: self._flip_array(arr) for cls_name, arr in target.items()}
+
+            return _img, self._flip_array(target)
+
         return img, target
 
 
@@ -286,7 +370,11 @@ class RandomResize(torch.nn.Module):
         self.p = p
         self._resize = Resize
 
-    def forward(self, img: torch.Tensor, target: np.ndarray) -> tuple[torch.Tensor, np.ndarray]:
+    def forward(
+        self,
+        img: torch.Tensor,
+        target: np.ndarray | dict[str, np.ndarray],
+    ) -> tuple[torch.Tensor, np.ndarray | dict[str, np.ndarray]]:
         if torch.rand(1) < self.p:
             scale_h = np.random.uniform(*self.scale_range)
             scale_w = np.random.uniform(*self.scale_range)
@@ -296,7 +384,7 @@ class RandomResize(torch.nn.Module):
                 new_size,
                 preserve_aspect_ratio=self.preserve_aspect_ratio
                 if isinstance(self.preserve_aspect_ratio, bool)
-                else bool(torch.rand(1) <= self.symmetric_pad),
+                else bool(torch.rand(1) <= self.preserve_aspect_ratio),
                 symmetric_pad=self.symmetric_pad
                 if isinstance(self.symmetric_pad, bool)
                 else bool(torch.rand(1) <= self.symmetric_pad),

@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -63,11 +63,11 @@ class PatchEmbed(nn.Module):
         self.embed_dim = embed_dim
         self.proj = nn.Sequential(
             *conv_sequence_pt(
-                in_channels, embed_dim // 2, kernel_size=3, stride=2, padding=1, bias=False, bn=True, relu=False
+                in_channels, embed_dim // 2, kernel_size=3, stride=2, padding=1, bias=False, bn=True, act=False
             ),
             nn.GELU(),
             *conv_sequence_pt(
-                embed_dim // 2, embed_dim, kernel_size=3, stride=2, padding=1, bias=False, bn=True, relu=False
+                embed_dim // 2, embed_dim, kernel_size=3, stride=2, padding=1, bias=False, bn=True, act=False
             ),
             nn.GELU(),
         )
@@ -240,10 +240,10 @@ class OverlappedSpatialReductionAttention(nn.Module):
                     groups=dim,
                     bias=False,
                     bn=True,
-                    relu=False,
+                    act=False,
                 ),
                 nn.GELU(),
-                *conv_sequence_pt(dim, dim, kernel_size=1, groups=dim, bias=False, bn=True, relu=False),
+                *conv_sequence_pt(dim, dim, kernel_size=1, groups=dim, bias=False, bn=True, act=False),
             )
         else:
             self.sr = nn.Identity()  # type: ignore[assignment]

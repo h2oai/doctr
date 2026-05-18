@@ -2,7 +2,7 @@
   <img src="https://github.com/mindee/doctr/raw/main/docs/images/Logo_doctr.gif" width="40%">
 </p>
 
-[![Slack Icon](https://img.shields.io/badge/Slack-Community-4A154B?style=flat-square&logo=slack&logoColor=white)](https://slack.mindee.com) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) ![Build Status](https://github.com/mindee/doctr/workflows/builds/badge.svg) [![Docker Images](https://img.shields.io/badge/Docker-4287f5?style=flat&logo=docker&logoColor=white)](https://github.com/mindee/doctr/pkgs/container/doctr) [![codecov](https://codecov.io/gh/mindee/doctr/branch/main/graph/badge.svg?token=577MO567NM)](https://codecov.io/gh/mindee/doctr) [![CodeFactor](https://www.codefactor.io/repository/github/mindee/doctr/badge?s=bae07db86bb079ce9d6542315b8c6e70fa708a7e)](https://www.codefactor.io/repository/github/mindee/doctr) [![Codacy Badge](https://api.codacy.com/project/badge/Grade/340a76749b634586a498e1c0ab998f08)](https://app.codacy.com/gh/mindee/doctr?utm_source=github.com&utm_medium=referral&utm_content=mindee/doctr&utm_campaign=Badge_Grade) [![Doc Status](https://github.com/mindee/doctr/workflows/doc-status/badge.svg)](https://mindee.github.io/doctr) [![Pypi](https://img.shields.io/badge/pypi-v1.0.0-blue.svg)](https://pypi.org/project/python-doctr/) [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/mindee/doctr) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mindee/notebooks/blob/main/doctr/quicktour.ipynb) [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20docTR%20Guru-006BFF)](https://gurubase.io/g/doctr)
+[![Slack Icon](https://img.shields.io/badge/Slack-Community-4A154B?style=flat-square&logo=slack&logoColor=white)](https://slack.mindee.com) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) ![Build Status](https://github.com/mindee/doctr/workflows/builds/badge.svg) [![Docker Images](https://img.shields.io/badge/Docker-4287f5?style=flat&logo=docker&logoColor=white)](https://github.com/mindee/doctr/pkgs/container/doctr) [![codecov](https://codecov.io/gh/mindee/doctr/branch/main/graph/badge.svg?token=577MO567NM)](https://codecov.io/gh/mindee/doctr) [![CodeFactor](https://www.codefactor.io/repository/github/mindee/doctr/badge?s=bae07db86bb079ce9d6542315b8c6e70fa708a7e)](https://www.codefactor.io/repository/github/mindee/doctr) [![Codacy Badge](https://api.codacy.com/project/badge/Grade/340a76749b634586a498e1c0ab998f08)](https://app.codacy.com/gh/mindee/doctr?utm_source=github.com&utm_medium=referral&utm_content=mindee/doctr&utm_campaign=Badge_Grade) [![Doc Status](https://github.com/mindee/doctr/workflows/doc-status/badge.svg)](https://mindee.github.io/doctr) [![Pypi](https://img.shields.io/badge/pypi-v1.0.1-blue.svg)](https://pypi.org/project/python-doctr/) [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/mindee/doctr) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/mindee/notebooks/blob/main/doctr/quicktour.ipynb) [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20docTR%20Guru-006BFF)](https://gurubase.io/g/doctr)
 
 
 **Optical Character Recognition made seamless & accessible to anyone, powered by PyTorch**
@@ -24,7 +24,7 @@ As such, you can select the architecture used for [text detection](https://minde
 ```python
 from doctr.models import ocr_predictor
 
-model = ocr_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
+model = ocr_predictor(det_arch="db_resnet50", reco_arch="crnn_vgg16_bn", pretrained=True)
 ```
 
 ### Reading files
@@ -33,6 +33,7 @@ Documents can be interpreted from PDF or images:
 
 ```python
 from doctr.io import DocumentFile
+
 # PDF
 pdf_doc = DocumentFile.from_pdf("path/to/your/doc.pdf")
 # Image
@@ -87,7 +88,9 @@ Or even rebuild the original document from its predictions:
 import matplotlib.pyplot as plt
 
 synthetic_pages = result.synthesize()
-plt.imshow(synthetic_pages[0]); plt.axis('off'); plt.show()
+plt.imshow(synthetic_pages[0])
+plt.axis("off")
+plt.show()
 ```
 
 ![Synthesis sample](https://github.com/mindee/doctr/raw/main/docs/images/synthesized_sample.png)
@@ -112,7 +115,7 @@ from doctr.io import DocumentFile
 from doctr.models import kie_predictor
 
 # Model
-model = kie_predictor(det_arch='db_resnet50', reco_arch='crnn_vgg16_bn', pretrained=True)
+model = kie_predictor(det_arch="db_resnet50", reco_arch="crnn_vgg16_bn", pretrained=True)
 # PDF
 doc = DocumentFile.from_pdf("path/to/your/doc.pdf")
 # Analyze
@@ -127,9 +130,15 @@ for class_name in predictions.keys():
 
 The KIE predictor results per page are in a dictionary format with each key representing a class name and it's value are the predictions for that class.
 
-### If you are looking for support from the Mindee team
+### docTR has received support from Mindee. It is now actively being developed by [t2k GmbH](https://www.text2knowledge.de/de)
 
 [![Bad OCR test detection image asking the developer if they need help](https://github.com/mindee/doctr/raw/main/docs/images/doctr-need-help.png)](https://mindee.com/product/doctr)
+
+
+This project is supported by [t2k GmbH](https://www.text2knowledge.de/de),
+<p align="center">
+  <img src="https://github.com/mindee/doctr/raw/main/docs/images/t2k_logo.png" width="40%">
+</p>
 
 ## Installation
 
@@ -313,7 +322,7 @@ import requests
 
 params = {"det_arch": "db_resnet50", "reco_arch": "crnn_vgg16_bn"}
 
-with open('/path/to/your/doc.jpg', 'rb') as f:
+with open("/path/to/your/doc.jpg", "rb") as f:
     files = [  # application/pdf, image/jpeg, image/png supported
         ("files", ("doc.jpg", f.read(), "image/jpeg")),
     ]
@@ -323,6 +332,7 @@ print(requests.post("http://localhost:8080/ocr", params=params, files=files).jso
 ### Example notebooks
 
 Looking for more illustrations of docTR features? You might want to check the [Jupyter notebooks](https://github.com/mindee/doctr/tree/main/notebooks) designed to give you a broader overview.
+
 
 ## Citation
 

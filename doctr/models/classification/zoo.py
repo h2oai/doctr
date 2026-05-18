@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -32,6 +32,8 @@ ARCHS: list[str] = [
     "vit_b",
     "vip_tiny",
     "vip_base",
+    "vit_det_s",
+    "vit_det_m",
 ]
 
 ORIENTATION_ARCHS: list[str] = ["mobilenet_v3_small_crop_orientation", "mobilenet_v3_small_page_orientation"]

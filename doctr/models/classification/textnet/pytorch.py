@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2025, Mindee.
+# Copyright (C) 2021-2026, Mindee.
 
 # This program is licensed under the Apache License 2.0.
 # See LICENSE or go to <https://opensource.org/licenses/Apache-2.0> for full license details.
@@ -63,7 +63,7 @@ class TextNet(nn.Sequential):
     ) -> None:
         _layers: list[nn.Module] = [
             *conv_sequence_pt(
-                in_channels=3, out_channels=64, relu=True, bn=True, kernel_size=3, stride=2, padding=(1, 1)
+                in_channels=3, out_channels=64, act=True, bn=True, kernel_size=3, stride=2, padding=(1, 1)
             ),
             *[
                 nn.Sequential(*[
