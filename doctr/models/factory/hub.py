@@ -9,11 +9,12 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 import textwrap
 from pathlib import Path
 from typing import Any
 
-from huggingface_hub import HfApi, HfFolder, Repository, hf_hub_download, snapshot_download
+from huggingface_hub import HfApi, get_token, hf_hub_download, login, snapshot_download
 
 from doctr import models
 from doctr.file_utils import is_tf_available, is_torch_available
@@ -34,13 +35,12 @@ AVAILABLE_ARCHS = {
 
 def login_to_hub() -> None:
     """Login to huggingface hub"""
-    access_token = HfFolder.get_token()
-    if access_token is not None and HfApi()._is_valid_token(access_token):
+    access_token = get_token()
+    if access_token is not None:
         logging.info("Huggingface Hub token found and valid")
-        HfApi().set_access_token(access_token)
+        login(token=access_token)
     else:
-        subprocess.call(["huggingface-cli", "login"])
-        HfApi().set_access_token(HfFolder().get_token())
+        login()
     # check if git lfs is installed
     try:
         subprocess.call(["git", "lfs", "version"])
@@ -164,17 +164,20 @@ def push_to_hf_hub(model: Any, model_name: str, task: str, **kwargs) -> None:
 
     commit_message = f"Add {model_name} model"
 
-    local_cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub", model_name)
-    repo_url = HfApi().create_repo(model_name, token=HfFolder.get_token(), exist_ok=False)
-    repo = Repository(local_dir=local_cache_dir, clone_from=repo_url, use_auth_token=True)
+    api = HfApi()
+    repo_url = api.create_repo(model_name, token=get_token(), repo_type="model", exist_ok=False)
 
-    with repo.commit(commit_message):
-
-        _save_model_and_config_for_hf_hub(model, repo.local_dir, arch=arch, task=task)
-        readme_path = Path(repo.local_dir) / "README.md"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        _save_model_and_config_for_hf_hub(model, tmp_dir, arch=arch, task=task)
+        readme_path = Path(tmp_dir) / "README.md"
         readme_path.write_text(readme)
 
-    repo.git_push()
+        api.upload_folder(
+            folder_path=tmp_dir,
+            repo_id=repo_url.repo_id,
+            repo_type="model",
+            commit_message=commit_message,
+        )
 
 
 def from_hub(repo_id: str, **kwargs: Any):
