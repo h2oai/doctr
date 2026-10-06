@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import torch
-from openvino.runtime import Core
+
 from torch import nn
 from torch.nn import functional as F
 from torchvision.models import resnet34, resnet50
@@ -368,6 +368,7 @@ class db_resnet50_onnx(_DBNet, nn.Module):
         self.assume_straight_pages = True
         self.postprocessor = DBPostProcessor(assume_straight_pages=self.assume_straight_pages)
         model_path = str(download_from_url(self.cfg["url"], cache_subdir='models'))
+        from openvino import Core
         self.ie = Core()
         self.ie.set_property({'CACHE_DIR': os.path.join(os.path.expanduser('~'), '.cache', 'doctr', 'models')})
         self.compiled_model_onnx = self.ie.compile_model(model=model_path, device_name="CPU")
@@ -392,6 +393,7 @@ class db_resnet50_rotation_onnx(_DBNet, nn.Module):
         self.postprocessor = DBPostProcessor(assume_straight_pages=self.assume_straight_pages)
         model_path = str(download_from_url(self.cfg["url"], cache_subdir='models'))
 
+        from openvino import Core
         self.ie = Core()
         self.ie.set_property({'CACHE_DIR': os.path.join(os.path.expanduser('~'), '.cache', 'doctr', 'models')})
         self.compiled_model_onnx = self.ie.compile_model(model=model_path, device_name="CPU")
