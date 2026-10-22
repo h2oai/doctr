@@ -45,7 +45,7 @@ print("pytorch time", time.time() - start)
 print(np.testing.assert_allclose(pred.detach().cpu().numpy(), ort_outs[0], rtol=1e-3, atol=1e-5))
 
 
-from openvino.runtime import Core
+from openvino import Core
 
 ie = Core()
 model_onnx = ie.read_model(model="crnn_effnetv2_mV2.onnx")

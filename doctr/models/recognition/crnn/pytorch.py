@@ -9,7 +9,6 @@ from itertools import groupby
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
-from openvino.runtime import Core
 from torch import nn
 from torch.nn import functional as F
 
@@ -343,6 +342,7 @@ class _crnn_onnx(RecognitionModel, nn.Module):
 
         self.postprocessor = CTCPostProcessor(vocab=self.vocab)
         model_path = str(download_from_url(self.cfg["url"], cache_subdir='models'))
+        from openvino import Core
         self.ie = Core()
         self.ie.set_property({'CACHE_DIR': os.path.join(os.path.expanduser('~'), '.cache', 'doctr', 'models')})
         self.compiled_model_onnx = self.ie.compile_model(model=model_path, device_name="CPU")
