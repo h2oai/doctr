@@ -50,8 +50,7 @@ dependencies = [
     "unidecode>=1.0.0",
     "tqdm>=4.30.0",
     "rapidfuzz>=1.6.0",
-    "huggingface-hub>=0.4.0",
-    "openvino==2022.3.1"
+    "huggingface-hub>=0.4.0"
 ]
 
 [project.optional-dependencies]
@@ -67,6 +66,11 @@ torch = [
     "nltk>=3.8",
     "pytorch-lightning>=1.8.6",
     "lightning-utilities>=0.5.0"
+]
+# The ONNX model classes import `from openvino import Core` lazily; that top-level export
+# exists from openvino 2023.1 (2022.3 / 2023.0 only expose openvino.runtime).
+openvino = [
+    "openvino>=2023.1",
 ]
 testing = [
     "pytest>=5.3.2",
